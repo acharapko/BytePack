@@ -5,6 +5,7 @@ import (
     "encoding/binary"
     "errors"
     "fmt"
+    "io"
     "math"
     "reflect"
     "strconv"
@@ -13,13 +14,19 @@ import (
 var intSize = strconv.IntSize / 8 // intSize in bytes
 var packableType = reflect.TypeOf((*Packable)(nil)).Elem()
 
+
+type BPReader interface {
+    io.ByteReader
+    io.Reader
+}
+
 // Packable
 /*
    Packable interface allows struct to implement own Pack and Unpack methods for data serialization and deserialization.
 */
 type Packable interface {
     Pack(s *Packer) error
-    Unpack(s *Packer, buf *bytes.Buffer) error
+    Unpack(s *Packer, buf BPReader) error
 }
 
 type Packer struct {
@@ -64,6 +71,12 @@ func (s *Packer) encode(obj interface{}) error {
             return piface.(Packable).Pack(s)
         }
         err := s.encodeStruct(v)
+        if err != nil {
+            return err
+        }
+    } else if t.Kind() == reflect.Ptr {
+        v := reflect.ValueOf(obj)
+        err := s.encodeStruct(v.Elem())
         if err != nil {
             return err
         }
@@ -706,12 +719,15 @@ func (s *Packer) Unpack(data []byte, obj interface{}) error {
     return nil
 }
 
-func (s *Packer) unpackFromBuffer(buf *bytes.Buffer, obj interface{}) error {
+func (s *Packer) UnpackFromReader(buf BPReader, obj interface{}) error {
     switch obj.(type) {
     case Packable:
         return obj.(Packable).Unpack(s, buf)
     default:
         v := reflect.ValueOf(obj)
+        if v.Kind() != reflect.Ptr {
+            return errors.New("must pass a pointer to an object")
+        }
         if v.Elem().Kind() == reflect.Struct {
             // so we found struct
             err := s.readStruct(buf, v.Elem())
@@ -726,7 +742,7 @@ func (s *Packer) unpackFromBuffer(buf *bytes.Buffer, obj interface{}) error {
     return nil
 }
 
-func (s *Packer) readStruct(buf *bytes.Buffer, objVal reflect.Value) error {
+func (s *Packer) readStruct(buf BPReader, objVal reflect.Value) error {
     numFields := objVal.NumField()
     for i := 0; i < numFields; i++ {
         f := objVal.Field(i)
@@ -884,7 +900,7 @@ func (s *Packer) readStruct(buf *bytes.Buffer, objVal reflect.Value) error {
     return nil
 }
 
-func (s *Packer) readMap(mapType reflect.Type, buf *bytes.Buffer, readMap reflect.Value) (bool, error) {
+func (s *Packer) readMap(mapType reflect.Type, buf BPReader, readMap reflect.Value) (bool, error) {
 	// read nil flag
 	isNil, err := s.UnpackBool(buf)
 	if isNil {
@@ -914,7 +930,7 @@ func (s *Packer) readMap(mapType reflect.Type, buf *bytes.Buffer, readMap reflec
 	return true, nil
 }
 
-func (s *Packer) readPointer(ptrType reflect.Type, buf *bytes.Buffer) (reflect.Value, error) {
+func (s *Packer) readPointer(ptrType reflect.Type, buf BPReader) (reflect.Value, error) {
     // first read ptr nil flag
     notNil, err := s.UnpackBool(buf)
     if err != nil {
@@ -930,7 +946,7 @@ func (s *Packer) readPointer(ptrType reflect.Type, buf *bytes.Buffer) (reflect.V
     return reflect.New(ptrType).Elem(), nil
 }
 
-func (s *Packer) readInterface(buf *bytes.Buffer) (*reflect.Value, error) {
+func (s *Packer) readInterface(buf BPReader) (*reflect.Value, error) {
     // first read interface nil flag
     notNil, err := s.UnpackBool(buf)
     if err != nil {
@@ -963,7 +979,7 @@ func (s *Packer) readInterface(buf *bytes.Buffer) (*reflect.Value, error) {
     return nil, nil
 }
 
-func (s *Packer) readBasicValues(valType reflect.Type, buf *bytes.Buffer) (reflect.Value, error) {
+func (s *Packer) readBasicValues(valType reflect.Type, buf BPReader) (reflect.Value, error) {
     val := reflect.New(valType)
     switch valType.Kind() {
     case reflect.Int:
@@ -1101,7 +1117,7 @@ func (s *Packer) readBasicValues(valType reflect.Type, buf *bytes.Buffer) (refle
   helpers of Packable decoders
  -----------------------------------*/
 
-func (s *Packer) UnpackString(buf *bytes.Buffer) (string, error) {
+func (s *Packer) UnpackString(buf BPReader) (string, error) {
     strLen, err := s.UnpackInt32(buf)
     if err != nil {
         return "", err
@@ -1115,7 +1131,7 @@ func (s *Packer) UnpackString(buf *bytes.Buffer) (string, error) {
     return string(strBuf), nil
 }
 
-func (s *Packer) UnpackInt8(buf *bytes.Buffer) (int8, error) {
+func (s *Packer) UnpackInt8(buf BPReader) (int8, error) {
     var err error
     b1, err := buf.ReadByte()
     if err != nil {
@@ -1124,7 +1140,7 @@ func (s *Packer) UnpackInt8(buf *bytes.Buffer) (int8, error) {
     return int8(b1), nil
 }
 
-func (s *Packer) UnpackInt16(buf *bytes.Buffer) (int16, error) {
+func (s *Packer) UnpackInt16(buf BPReader) (int16, error) {
     var i uint16
     var err error
     b1, err := buf.ReadByte()
@@ -1139,7 +1155,7 @@ func (s *Packer) UnpackInt16(buf *bytes.Buffer) (int16, error) {
     return int16(i), nil
 }
 
-func (s *Packer) UnpackInt32(buf *bytes.Buffer) (int32, error) {
+func (s *Packer) UnpackInt32(buf BPReader) (int32, error) {
     var i uint32
     var err error
     b1, err := buf.ReadByte()
@@ -1162,7 +1178,7 @@ func (s *Packer) UnpackInt32(buf *bytes.Buffer) (int32, error) {
     return int32(i), nil
 }
 
-func (s *Packer) UnpackInt64(buf *bytes.Buffer) (int64, error) {
+func (s *Packer) UnpackInt64(buf BPReader) (int64, error) {
     var i uint64
     var err error
     b1, err := buf.ReadByte()
@@ -1201,7 +1217,7 @@ func (s *Packer) UnpackInt64(buf *bytes.Buffer) (int64, error) {
     return int64(i), nil
 }
 
-func (s *Packer) UnpackInt(buf *bytes.Buffer) (int, error) {
+func (s *Packer) UnpackInt(buf BPReader) (int, error) {
     if intSize == 8 {
         i, err := s.UnpackInt64(buf)
         return int(i), err
@@ -1212,11 +1228,11 @@ func (s *Packer) UnpackInt(buf *bytes.Buffer) (int, error) {
     return 0, errors.New("int must be 4 or 8 bytes depending on the system")
 }
 
-func (s *Packer) UnpackUint8(buf *bytes.Buffer) (uint8, error) {
+func (s *Packer) UnpackUint8(buf BPReader) (uint8, error) {
     return buf.ReadByte()
 }
 
-func (s *Packer) UnpackUint16(buf *bytes.Buffer) (uint16, error) {
+func (s *Packer) UnpackUint16(buf BPReader) (uint16, error) {
     var i uint16
     var err error
     b1, err := buf.ReadByte()
@@ -1231,7 +1247,7 @@ func (s *Packer) UnpackUint16(buf *bytes.Buffer) (uint16, error) {
     return i, nil
 }
 
-func (s *Packer) UnpackUint32(buf *bytes.Buffer) (uint32, error) {
+func (s *Packer) UnpackUint32(buf BPReader) (uint32, error) {
     var i uint32
     var err error
     b1, err := buf.ReadByte()
@@ -1254,7 +1270,7 @@ func (s *Packer) UnpackUint32(buf *bytes.Buffer) (uint32, error) {
     return i, nil
 }
 
-func (s *Packer) UnpackUint64(buf *bytes.Buffer) (uint64, error) {
+func (s *Packer) UnpackUint64(buf BPReader) (uint64, error) {
     var i uint64
     var err error
     b1, err := buf.ReadByte()
@@ -1293,7 +1309,7 @@ func (s *Packer) UnpackUint64(buf *bytes.Buffer) (uint64, error) {
     return i, nil
 }
 
-func (s *Packer) UnpackUint(buf *bytes.Buffer) (uint, error) {
+func (s *Packer) UnpackUint(buf BPReader) (uint, error) {
     if intSize == 8 {
         i, err := s.UnpackUint64(buf)
         return uint(i), err
@@ -1304,7 +1320,7 @@ func (s *Packer) UnpackUint(buf *bytes.Buffer) (uint, error) {
     return 0, errors.New("int must be 4 or 8 bytes depending on the system")
 }
 
-func (s *Packer) UnpackFloat64(buf *bytes.Buffer) (float64, error) {
+func (s *Packer) UnpackFloat64(buf BPReader) (float64, error) {
     bits, err := s.UnpackUint64(buf)
     if err != nil {
         return 0, err
@@ -1313,7 +1329,7 @@ func (s *Packer) UnpackFloat64(buf *bytes.Buffer) (float64, error) {
     return f, err
 }
 
-func (s *Packer) UnpackFloat32(buf *bytes.Buffer) (float32, error) {
+func (s *Packer) UnpackFloat32(buf BPReader) (float32, error) {
     bits, err := s.UnpackUint32(buf)
     if err != nil {
         return 0, err
@@ -1322,7 +1338,7 @@ func (s *Packer) UnpackFloat32(buf *bytes.Buffer) (float32, error) {
     return f, err
 }
 
-func (s *Packer) UnpackBool(buf *bytes.Buffer) (bool, error) {
+func (s *Packer) UnpackBool(buf BPReader) (bool, error) {
     var err error
     b1, err := buf.ReadByte()
     if err != nil {
@@ -1331,7 +1347,7 @@ func (s *Packer) UnpackBool(buf *bytes.Buffer) (bool, error) {
     return b1 != 0, nil
 }
 
-func (s *Packer) UnpackStruct(buf *bytes.Buffer, i interface{}) error {
+func (s *Packer) UnpackStruct(buf BPReader, i interface{}) error {
     iVal := reflect.ValueOf(i)
     if iVal.Kind() == reflect.Ptr {
         // expect a pointer to a struct
@@ -1340,7 +1356,7 @@ func (s *Packer) UnpackStruct(buf *bytes.Buffer, i interface{}) error {
         return errors.New("expect a pointer to a struct")
     }
     if iVal.Kind() == reflect.Struct {
-        err := s.unpackFromBuffer(buf, i)
+        err := s.UnpackFromReader(buf, i)
         if err != nil {
             return err
         }
@@ -1350,7 +1366,7 @@ func (s *Packer) UnpackStruct(buf *bytes.Buffer, i interface{}) error {
     return nil
 }
 
-func (s *Packer) UnpackArray(arrayType reflect.Type, buf *bytes.Buffer) (*reflect.Value, error) {
+func (s *Packer) UnpackArray(arrayType reflect.Type, buf BPReader) (*reflect.Value, error) {
 	// first find out how many items are in the slice
 	arrayKind := arrayType.Elem().Kind()
 	var err error
@@ -1424,7 +1440,7 @@ func (s *Packer) UnpackArray(arrayType reflect.Type, buf *bytes.Buffer) (*reflec
 	}
 }
 
-func (s *Packer) UnpackSlice(sliceType reflect.Type, buf *bytes.Buffer) (*reflect.Value, error) {
+func (s *Packer) UnpackSlice(sliceType reflect.Type, buf BPReader) (*reflect.Value, error) {
 	// read nil flag
 	isNil, err := s.UnpackBool(buf)
 	if isNil {
@@ -1499,7 +1515,7 @@ func (s *Packer) UnpackSlice(sliceType reflect.Type, buf *bytes.Buffer) (*reflec
 	}
 }
 
-func (s *Packer) UnpackMap(mapType reflect.Type, buf *bytes.Buffer) (*reflect.Value, error) {
+func (s *Packer) UnpackMap(mapType reflect.Type, buf BPReader) (*reflect.Value, error) {
 	decodedMap := reflect.MakeMap(mapType)
 	_, err := s.readMap(mapType, buf, decodedMap)
 	if err != nil {

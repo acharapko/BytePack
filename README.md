@@ -56,6 +56,15 @@ The library consists of two major components:
   } 
   ```
   
+  Alternatively, one may Unpack from a reader, such as ``bufio.Reader`` or ``bytes.Buffer``:
+  ```go
+  reader := bytes.NewBuffer(packedBytes)
+  err = bp.UnpackFromReader(reader, &fUnpacked)
+  if err != nil {
+       panic(err)
+  } 
+  ```
+  
 * Register Struct for use as _interface{}_
   ```go
   type foo struct {
@@ -94,7 +103,7 @@ The library consists of two major components:
 ## Overriding Pack and Unpack
 
 BytePack allows overriding how structs are serialized and deserialized by implementing `Packable` interface.
-A struct needs to have `Pack(p *Packer) error` and `Unpack(p *Packer, buf *bytes.Buffer) error` methods. 
+A struct needs to have `Pack(p *Packer) error` and `Unpack(p *Packer, buf BPReader) error` methods. 
 Below is an example of a simple struct implementing `Packable`:
 
 ```go
@@ -120,7 +129,7 @@ func (p *personS) Pack(packer *Packer) error {
     return nil
 }
 
-func (p *personS) Unpack(packer *Packer, buf *bytes.Buffer) error {
+func (p *personS) Unpack(packer *Packer, buf BPReader) error {
     var err error
     p.Height, err = packer.UnpackFloat64(buf)
     if err != nil {
@@ -163,21 +172,21 @@ For packing different values, use following exported methods in Packer:
 
 For unpacking the values:
 
-* `UnpackString(buf *bytes.Buffer) (string, error)`
-* `UnpackInt8(buf *bytes.Buffer) (int8, error)`
-* `UnpackInt16(buf *bytes.Buffer) (int16, error)`
-* `UnpackInt32(buf *bytes.Buffer) (int32, error)`
-* `UnpackInt64(buf *bytes.Buffer) (int64, error)`
-* `UnpackInt(buf *bytes.Buffer) (int, error)`
-* `UnpackUint8(buf *bytes.Buffer) (uint8, error)`
-* `UnpackUint16(buf *bytes.Buffer) (uint16, error)`
-* `UnpackUint32(buf *bytes.Buffer) (uint32, error)`
-* `UnpackUint64(buf *bytes.Buffer) (uint64, error)`
-* `UnpackUint(buf *bytes.Buffer) (uint, error)`
-* `UnpackFloat64(buf *bytes.Buffer) (float64, error)`
-* `UnpackFloat32(buf *bytes.Buffer) (float32, error)`
-* `UnpackBool(buf *bytes.Buffer) (bool, error)`
-* `UnpackStruct(buf *bytes.Buffer, i interface{}) error`
-* `UnpackArray(arrayType reflect.Type, buf *bytes.Buffer) (*reflect.Value, error)`
-* `UnpackSlice(sliceType reflect.Type, buf *bytes.Buffer) (*reflect.Value, error)`
-* `UnpackMap(mapType reflect.Type, buf *bytes.Buffer) (*reflect.Value, error)`
+* `UnpackString(buf BPReader) (string, error)`
+* `UnpackInt8(buf BPReader) (int8, error)`
+* `UnpackInt16(buf BPReader) (int16, error)`
+* `UnpackInt32(buf BPReader) (int32, error)`
+* `UnpackInt64(buf BPReader) (int64, error)`
+* `UnpackInt(buf BPReader) (int, error)`
+* `UnpackUint8(buf BPReader) (uint8, error)`
+* `UnpackUint16(buf BPReader) (uint16, error)`
+* `UnpackUint32(buf BPReader) (uint32, error)`
+* `UnpackUint64(buf BPReader) (uint64, error)`
+* `UnpackUint(buf BPReader) (uint, error)`
+* `UnpackFloat64(buf BPReader) (float64, error)`
+* `UnpackFloat32(buf BPReader) (float32, error)`
+* `UnpackBool(buf BPReader) (bool, error)`
+* `UnpackStruct(buf BPReader, i interface{}) error`
+* `UnpackArray(arrayType reflect.Type, buf BPReader) (*reflect.Value, error)`
+* `UnpackSlice(sliceType reflect.Type, buf BPReader) (*reflect.Value, error)`
+* `UnpackMap(mapType reflect.Type, buf BPReader) (*reflect.Value, error)`

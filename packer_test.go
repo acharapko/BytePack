@@ -1,7 +1,6 @@
 package bytepack
 
 import (
-    "bytes"
     "fmt"
     "github.com/google/uuid"
     "github.com/stretchr/testify/assert"
@@ -40,7 +39,7 @@ func (p *personS) Pack(packer *Packer) error {
     return nil
 }
 
-func (p *personS) Unpack(packer *Packer, buf *bytes.Buffer) error {
+func (p *personS) Unpack(packer *Packer, buf BPReader) error {
     var err error
     p.Height, err = packer.UnpackFloat64(buf)
     if err != nil {
@@ -121,6 +120,31 @@ func TestPacker_EncodeReflectSimple(t *testing.T) {
     assert.Equal(t, a.Name, a2.Name)
 }
 
+func TestPacker_EncodeReflectSimplePassedAsPointer(t *testing.T) {
+    s := NewPacker()
+    a := person{
+        Name:   "Tester",
+        Age:    30,
+        Height: 5.25,
+    }
+
+    buf, _ := s.Pack(&a)
+    fmt.Printf("buf len = %d\n", len(buf))
+
+    var a2 person
+    err := s.Unpack(buf, &a2)
+    if err != nil {
+        fmt.Printf("Err: %v\n", err)
+        t.Fail()
+    }
+
+    fmt.Printf("a2=%+v\n", a2)
+
+    assert.Equal(t, a.Age, a2.Age)
+    assert.Equal(t, a.Height, a2.Height)
+    assert.Equal(t, a.Name, a2.Name)
+}
+
 func TestPacker_EncodeReflectSimpleSerializable(t *testing.T) {
     s := NewPacker()
     a := personS{
@@ -133,6 +157,60 @@ func TestPacker_EncodeReflectSimpleSerializable(t *testing.T) {
     fmt.Printf("buf len = %d\n", len(buf))
 
     var a2 personS
+    err := s.Unpack(buf, &a2)
+    if err != nil {
+        fmt.Printf("Err: %v\n", err)
+        t.Fail()
+    }
+
+    fmt.Printf("a2=%+v\n", a2)
+
+    assert.Equal(t, a.Age, a2.Age)
+    assert.Equal(t, a.Height, a2.Height)
+    assert.Equal(t, a.Name, a2.Name)
+}
+
+func TestPacker_EncodeReflectSimpleSerializablePassedAsPointer(t *testing.T) {
+    s := NewPacker()
+    a := personS{
+        Name:   "Tester123",
+        Age:    31,
+        Height: 6.25,
+    }
+
+    buf, _ := s.Pack(&a)
+    fmt.Printf("buf len = %d\n", len(buf))
+
+    var a2 personS
+    err := s.Unpack(buf, &a2)
+    if err != nil {
+        fmt.Printf("Err: %v\n", err)
+        t.Fail()
+    }
+
+    fmt.Printf("a2=%+v\n", a2)
+
+    assert.Equal(t, a.Age, a2.Age)
+    assert.Equal(t, a.Height, a2.Height)
+    assert.Equal(t, a.Name, a2.Name)
+}
+
+func TestPacker_EncodeReflectSimpleAsInterface(t *testing.T) {
+    s := NewPacker()
+    a := person{
+        Name:   "Tester",
+        Age:    30,
+        Height: 5.25,
+    }
+
+    var aiface interface{}
+
+    aiface = a
+
+    buf, _ := s.Pack(aiface)
+    fmt.Printf("buf len = %d\n", len(buf))
+
+    var a2 person
     err := s.Unpack(buf, &a2)
     if err != nil {
         fmt.Printf("Err: %v\n", err)

@@ -61,3 +61,15 @@ func (p *BytePack) Unpack(data []byte, strct interface{}) error {
     }
     return nil
 }
+
+func (p *BytePack) UnpackFromReader(reader BPReader, strct interface{}) error {
+    // get the packer from the pool
+    s := <- p.pool
+    err := s.UnpackFromReader(reader, strct)
+    // now put the packer back into the pool
+    p.pool <- s
+    if err != nil {
+        return err
+    }
+    return nil
+}
