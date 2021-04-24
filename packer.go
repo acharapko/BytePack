@@ -76,9 +76,19 @@ func (s *Packer) encode(obj interface{}) error {
         }
     } else if t.Kind() == reflect.Ptr {
         v := reflect.ValueOf(obj)
-        err := s.encodeStruct(v.Elem())
-        if err != nil {
-            return err
+        //err := s.encodePointer(v)
+        if v.IsNil() {
+            return errors.New("cannot encode nil struct")
+        }
+        if v.Elem().Kind() == reflect.Struct {
+            err := s.encodeStruct(v.Elem())
+            if err != nil {
+                return err
+            }
+        } else if v.Elem().Kind() == reflect.Interface {
+            return s.encode(v.Elem().Interface())
+        } else {
+            return errors.New(fmt.Sprintf("cannot encode non-struct. Got: %v", v.Elem().Kind()))
         }
     }
 
@@ -892,6 +902,8 @@ func (s *Packer) readStruct(buf BPReader, objVal reflect.Value) error {
             if val != nil {
                 f.Set(*val)
             }
+        case reflect.Chan:
+            // do nothing with the chan and leave it nil
         default:
             return errors.New(fmt.Sprintf("decoding unsupported type %v", ft.Kind()))
         }
@@ -1109,6 +1121,8 @@ func (s *Packer) readBasicValues(valType reflect.Type, buf BPReader) (reflect.Va
         if err != nil {
             return val, err
         }
+    case reflect.Chan:
+        // do nothing with the chan and leave it nil
     }
     return val, nil
 }

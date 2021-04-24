@@ -9,9 +9,56 @@ import (
     "reflect"
     "testing"
 )
-/*
- * Benchmarks
- */
+
+func Benchmark_EncodeInt64(b *testing.B) {
+    s := NewPacker()
+    i64 := reflect.ValueOf(int64(5214563454864521467))
+    for i := 0; i < b.N; i++ {
+        err := s.encodeValue(i64)
+        if err != nil {
+            fmt.Printf("err=%v\n", err)
+        }
+        s.w.Reset()
+    }
+}
+
+func Benchmark_EncodeSliceInt(b *testing.B) {
+    s := NewPacker()
+    intSlice := reflect.ValueOf([]int {6, 12, 45, 124, 25, 4587})
+    for i := 0; i < b.N; i++ {
+        err := s.encodeSlice(intSlice)
+        if err != nil {
+            fmt.Printf("err=%v\n", err)
+        }
+        s.w.Reset()
+    }
+}
+
+func Benchmark_EncodeSliceString(b *testing.B) {
+    s := NewPacker()
+    intSlice := reflect.ValueOf([]string {"test123", "this is a test 12345", "testing string slice encoding", "test test test", "Hello world!"})
+    for i := 0; i < b.N; i++ {
+        err := s.encodeSlice(intSlice)
+        if err != nil {
+            fmt.Printf("err=%v\n", err)
+        }
+        s.w.Reset()
+    }
+}
+
+func Benchmark_ReadIntSlice(b *testing.B) {
+    bufBytes := []byte{0, 0, 0, 6, 0, 0, 12, 25, 0, 1, 17, 69, 0, 0, 12, 25, 0, 1, 17, 70, 0, 0, 12, 25, 0, 1, 17, 69, 0, 0, 12, 25, 0, 1, 17, 70, 0, 0, 12, 25, 0, 1, 17, 69, 0, 0, 12, 25, 0, 1, 17, 70}
+    s := NewPacker()
+    intSlice := make([]int, 0)
+    for i := 0; i < b.N; i++ {
+        buf := bytes.NewBuffer(bufBytes)
+        _, err := s.UnpackSlice(reflect.TypeOf(intSlice), buf)
+        if err != nil {
+            fmt.Printf("err=%v\n", err)
+        }
+    }
+}
+
 func Benchmark_Serialize(b *testing.B) {
     s := NewPacker()
     a := person{
@@ -104,68 +151,6 @@ func Benchmark_SerializeJson(b *testing.B) {
         err = json.Unmarshal(tempbts, &a2)
         if err != nil {
             panic(err)
-        }
-    }
-}
-
-func Benchmark_EncodeInt64(b *testing.B) {
-    s := NewPacker()
-    i64 := reflect.ValueOf(int64(5214563454864521467))
-    for i := 0; i < b.N; i++ {
-        err := s.encodeValue(i64)
-        if err != nil {
-            fmt.Printf("err=%v\n", err)
-        }
-        s.w.Reset()
-    }
-}
-
-func Benchmark_EncodeSliceInt(b *testing.B) {
-    s := NewPacker()
-    intSlice := reflect.ValueOf([]int {6, 12, 45, 124, 25, 4587})
-    for i := 0; i < b.N; i++ {
-        err := s.encodeSlice(intSlice)
-        if err != nil {
-            fmt.Printf("err=%v\n", err)
-        }
-        s.w.Reset()
-    }
-}
-
-func Benchmark_EncodeSliceString(b *testing.B) {
-    s := NewPacker()
-    intSlice := reflect.ValueOf([]string {"test123", "this is a test 12345", "testing string slice encoding", "test test test", "Hello world!"})
-    for i := 0; i < b.N; i++ {
-        err := s.encodeSlice(intSlice)
-        if err != nil {
-            fmt.Printf("err=%v\n", err)
-        }
-        s.w.Reset()
-    }
-}
-
-func Benchmark_ReadIntSlice(b *testing.B) {
-    bufBytes := []byte{0, 0, 0, 6, 0, 0, 12, 25, 0, 1, 17, 69, 0, 0, 12, 25, 0, 1, 17, 70, 0, 0, 12, 25, 0, 1, 17, 69, 0, 0, 12, 25, 0, 1, 17, 70, 0, 0, 12, 25, 0, 1, 17, 69, 0, 0, 12, 25, 0, 1, 17, 70}
-    s := NewPacker()
-    intSlice := make([]int, 0)
-    for i := 0; i < b.N; i++ {
-        buf := bytes.NewBuffer(bufBytes)
-        _, err := s.UnpackSlice(reflect.TypeOf(intSlice), buf)
-        if err != nil {
-            fmt.Printf("err=%v\n", err)
-        }
-    }
-}
-
-func Benchmark_cast(b *testing.B) {
-    var num int64 = 122
-    var num2 int
-    numEntries := 2
-    intSlice := make([]int, numEntries, numEntries)
-    for i := 0; i < b.N; i++ {
-        num2 = int(num)
-        for j := 0; j < numEntries; j++ {
-            intSlice[j] = num2
         }
     }
 }

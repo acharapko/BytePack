@@ -207,11 +207,12 @@ func TestPacker_EncodeReflectSimpleAsInterface(t *testing.T) {
 
     aiface = a
 
-    buf, _ := s.Pack(aiface)
+    buf, err := s.Pack(aiface)
+    assert.Nil(t, err)
     fmt.Printf("buf len = %d\n", len(buf))
 
     var a2 person
-    err := s.Unpack(buf, &a2)
+    err = s.Unpack(buf, &a2)
     if err != nil {
         fmt.Printf("Err: %v\n", err)
         t.Fail()
@@ -222,6 +223,63 @@ func TestPacker_EncodeReflectSimpleAsInterface(t *testing.T) {
     assert.Equal(t, a.Age, a2.Age)
     assert.Equal(t, a.Height, a2.Height)
     assert.Equal(t, a.Name, a2.Name)
+}
+
+func TestPacker_EncodeReflectSimpleAsInterfacePointer(t *testing.T) {
+    s := NewPacker()
+    a := person{
+        Name:   "Tester",
+        Age:    30,
+        Height: 5.25,
+    }
+
+    var aiface interface{}
+
+    aiface = a
+
+    buf, err := s.Pack(&aiface)
+    assert.Nil(t, err)
+    fmt.Printf("buf len = %d\n", len(buf))
+
+    var a2 person
+    err = s.Unpack(buf, &a2)
+    if err != nil {
+        fmt.Printf("Err: %v\n", err)
+        t.Fail()
+    }
+
+    fmt.Printf("a2=%+v\n", a2)
+
+    assert.Equal(t, a.Age, a2.Age)
+    assert.Equal(t, a.Height, a2.Height)
+    assert.Equal(t, a.Name, a2.Name)
+}
+
+func TestPacker_EncodeReflectWithUnpackableType(t *testing.T) {
+    s := NewPacker()
+    type fooUnpackacble struct {
+        Name string
+        Ch   chan interface{}
+    }
+    a := fooUnpackacble{
+        Name:   "Tester",
+        Ch: make(chan interface{}, 1),
+    }
+
+    buf, _ := s.Pack(a)
+    fmt.Printf("buf len = %d\n", len(buf))
+
+    var a2 fooUnpackacble
+    err := s.Unpack(buf, &a2)
+    if err != nil {
+        fmt.Printf("Err: %v\n", err)
+        t.Fail()
+    }
+
+    fmt.Printf("a2=%+v\n", a2)
+
+    assert.Equal(t, a.Name, a2.Name)
+    assert.Nil(t, a2.Ch)
 }
 
 func TestPacker_EncodeReflectWithSlice(t *testing.T) {
