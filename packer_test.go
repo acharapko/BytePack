@@ -1,10 +1,15 @@
 package bytepack
 
 import (
+    "bufio"
     "fmt"
     "github.com/google/uuid"
     "github.com/stretchr/testify/assert"
+    "net"
+    "os"
+    "sync"
     "testing"
+    "time"
 )
 
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -822,3 +827,80 @@ func TestPacker_EncodeReflectWithIntArray(t *testing.T) {
     assert.Equal(t, int8(69), decoded8.Nums[3])
 }
 
+func TestPacker_EncodeReflectOverSlowTcp(t *testing.T) {
+    s := NewPacker()
+    type fooperson struct {
+        Name string
+        Age  int
+        Height float64
+        HairColor string
+        Weight int32
+    }
+    a := fooperson{
+        Name:   "Tester",
+        Age:    30,
+        Height: 5.25,
+        HairColor: "Brown",
+        Weight: 155,
+    }
+
+    buf, _ := s.Pack(a)
+    fmt.Printf("buf len = %d\n", len(buf))
+
+    var a2 fooperson
+    var wg sync.WaitGroup
+    wg.Add(2)
+    go func() {
+        fmt.Printf("start listen\n")
+        l, err := net.Listen("tcp", "127.0.0.1:8001")
+        if err != nil {
+            fmt.Println("Error listening:", err.Error())
+            os.Exit(1)
+        }
+        defer l.Close()
+        // Listen for an incoming connection.
+        conn, err := l.Accept()
+        if err != nil {
+            fmt.Println("Error accepting: ", err.Error())
+            os.Exit(1)
+        }
+        // Handle connections in a new goroutine.
+        connReader := bufio.NewReader(conn)
+        go func() {
+
+            err := s.UnpackFromReader(connReader, &a2)
+            if err != nil {
+                panic(err)
+            }
+            // Close the connection when you're done with it.
+            conn.Close()
+        }()
+        wg.Done()
+    }()
+
+    time.Sleep(100 * time.Millisecond)
+
+    go func() {
+        fmt.Printf("start dial\n")
+        connOut, err := net.Dial("tcp", "127.0.0.1:8001")
+        if err != nil {
+            panic(err)
+        }
+
+        for i := 0; i < len(buf); i++ {
+            connOut.Write(buf[i:i+1])
+            time.Sleep(50 * time.Millisecond)
+        }
+        wg.Done()
+    }()
+
+    wg.Wait()
+
+    fmt.Printf("a2=%+v\n", a2)
+
+    assert.Equal(t, a.Age, a2.Age)
+    assert.Equal(t, a.Height, a2.Height)
+    assert.Equal(t, a.Name, a2.Name)
+    assert.Equal(t, a.HairColor, a2.HairColor)
+    assert.Equal(t, a.Weight, a2.Weight)
+}

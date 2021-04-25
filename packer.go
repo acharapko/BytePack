@@ -5,6 +5,7 @@ import (
     "encoding/binary"
     "errors"
     "fmt"
+    "github.com/acharapko/pbench/log"
     "io"
     "math"
     "reflect"
@@ -897,6 +898,7 @@ func (s *Packer) readStruct(buf BPReader, objVal reflect.Value) error {
         case reflect.Interface:
             val, err := s.readInterface(buf)
             if err != nil {
+                log.Errorf("Error reading interface. Partial object: %v", f.Interface())
                 return err
             }
             if val != nil {
@@ -985,6 +987,9 @@ func (s *Packer) readInterface(buf BPReader) (*reflect.Value, error) {
             }
             return &val, err
         } else {
+            if len(typeStr) > 255 {
+                return nil, errors.New(fmt.Sprintf("type %s... is not registered", typeStr[0:255]))
+            }
             return nil, errors.New(fmt.Sprintf("type %s is not registered", typeStr))
         }
     }
@@ -1138,7 +1143,7 @@ func (s *Packer) UnpackString(buf BPReader) (string, error) {
     }
 
     strBuf := make([]byte, strLen)
-    _, err = buf.Read(strBuf)
+    _, err = io.ReadFull(buf, strBuf)
     if err != nil {
         return "", err
     }
@@ -1476,8 +1481,8 @@ func (s *Packer) UnpackSlice(sliceType reflect.Type, buf BPReader) (*reflect.Val
 		return &sliceValue, nil
 	case reflect.Uint8:
 		b := make([]byte, int(numEntries), int(numEntries))
-		_, err = buf.Read(b)
-		if err != nil {
+        _, err = io.ReadFull(buf, b)
+        if err != nil {
 			return nil, err
 		}
 		reflectedB := reflect.ValueOf(b)
