@@ -28,6 +28,16 @@ type personS struct {
     Height float64
 }
 
+type barLoop struct {
+    BarName string
+    Foo *fooLoop
+}
+
+type fooLoop struct {
+    B *barLoop
+    FooName string
+}
+
 func (p *personS) Pack(packer *Packer) error {
     err := packer.PackFloat64(p.Height)
     if err != nil {
@@ -525,6 +535,78 @@ func TestPacker_EncodeReflectWithMapAndNilPointer(t *testing.T) {
     assert.Equal(t, len(a.Bars), len(a2.Bars))
     assert.Equal(t, a.Bars[12], a2.Bars[12])
     assert.Equal(t, a.Bars[123], a2.Bars[123])
+}
+
+func TestPacker_EncodeReflectWithPointerLoop(t *testing.T) {
+    s := NewPacker()
+
+    b := &barLoop{
+        BarName: "bar",
+    }
+
+    f := fooLoop{
+        B:    b,
+        FooName: "foo",
+    }
+    b.Foo = &f
+
+    buf, _ := s.Pack(f)
+    fmt.Printf("buf len = %d\n", len(buf))
+
+    var a2 fooLoop
+    err := s.Unpack(buf, &a2)
+    if err != nil {
+        fmt.Printf("Err: %v\n", err)
+        t.Fail()
+    }
+
+    assert.NotNil(t, a2.B)
+    assert.Equal(t, "bar", a2.B.BarName)
+    assert.Equal(t, "foo", a2.B.Foo.FooName)
+    assert.NotNil(t, a2.B.Foo.B)
+    assert.Equal(t, "bar", a2.B.Foo.B.BarName)
+    assert.Equal(t, a2.B, a2.B.Foo.B)
+    assert.Equal(t, a2.B.Foo, a2.B.Foo.B.Foo)
+
+    fmt.Printf("a2=%+v\n", a2)
+}
+
+func TestPacker_EncodeReflectWithPointerLoopAndPointerEncode(t *testing.T) {
+    s := NewPacker()
+
+    b := &barLoop{
+        BarName: "bar",
+    }
+
+    f := fooLoop{
+        B:    b,
+        FooName: "foo",
+    }
+    b.Foo = &f
+
+    buf, _ := s.Pack(&f)
+    fmt.Printf("buf len = %d\n", len(buf))
+
+    var a2 fooLoop
+    a2ptr := &a2
+    err := s.Unpack(buf, a2ptr)
+    if err != nil {
+        fmt.Printf("Err: %v\n", err)
+        t.Fail()
+    }
+
+    assert.NotNil(t, a2.B)
+    assert.Equal(t, "bar", a2.B.BarName)
+    assert.Equal(t, "foo", a2.B.Foo.FooName)
+    assert.NotNil(t, a2.B.Foo.B)
+    assert.Equal(t, "bar", a2.B.Foo.B.BarName)
+    a2ptrAddress := fmt.Sprintf("%p", a2ptr)
+    a2BFooAddress := fmt.Sprintf("%p", a2.B.Foo)
+    assert.Equal(t, a2ptrAddress, a2BFooAddress)
+    assert.Equal(t, a2.B, a2.B.Foo.B)
+    assert.Equal(t, a2.B.Foo, a2.B.Foo.B.Foo)
+
+    fmt.Printf("a2=%+v\n", a2)
 }
 
 func TestPacker_EncodeReflectWithNilMap(t *testing.T) {

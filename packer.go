@@ -31,12 +31,24 @@ type Packable interface {
 }
 
 type Packer struct {
-    w *bytes.Buffer
+    w        *bytes.Buffer
+
+    rootPtrEncoded  bool
+    ptrIdCounter    uint16
+    ptrstoid        map[uintptr]uint16
+    idstoptr        map[uint16]*decodingPtr
+}
+
+type decodingPtr struct {
+    isDecoded bool
+    waiting *reflect.Value
+    ptr reflect.Value
 }
 
 func NewPacker() *Packer {
     return &Packer{
         w: new(bytes.Buffer),
+        ptrIdCounter: 0,
     }
 }
 
@@ -45,6 +57,9 @@ func NewPacker() *Packer {
  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
 func (s *Packer) Pack(obj interface{}) ([]byte, error) {
+    s.ptrIdCounter = 1
+    s.rootPtrEncoded = false
+    s.ptrstoid = make(map[uintptr]uint16, 0)
     err := s.encode(obj)
     if err != nil {
         return nil, err
@@ -63,6 +78,9 @@ func (s *Packer) encode(obj interface{}) error {
 
     t := reflect.TypeOf(obj)
     if t.Kind() == reflect.Struct {
+        if s.ptrIdCounter == 1 {
+            s.ptrIdCounter = 2
+        }
         v := reflect.ValueOf(obj)
         p := reflect.New(t)
         piface := p.Interface()
@@ -71,18 +89,25 @@ func (s *Packer) encode(obj interface{}) error {
             p.Elem().Set(v)
             return piface.(Packable).Pack(s)
         }
-        err := s.encodeStruct(v)
+        err := s.PackUint8(0)
+        if err != nil {
+            return err
+        }
+        err = s.encodeStruct(v)
         if err != nil {
             return err
         }
     } else if t.Kind() == reflect.Ptr {
         v := reflect.ValueOf(obj)
-        //err := s.encodePointer(v)
         if v.IsNil() {
             return errors.New("cannot encode nil struct")
         }
         if v.Elem().Kind() == reflect.Struct {
-            err := s.encodeStruct(v.Elem())
+            err := s.PackUint8(1)
+            if err != nil {
+                return err
+            }
+            err = s.encodePointer(v)
             if err != nil {
                 return err
             }
@@ -114,7 +139,6 @@ func (s *Packer) encodeValue(val reflect.Value) error {
     switch val.Kind() {
     case reflect.Struct:
         err := s.encodeStruct(val)
-        //err := s.encode(val.Interface())
         if err != nil {
             return err
         }
@@ -254,22 +278,42 @@ func (s *Packer) encodeValueWithType(val reflect.Value) error {
 }
 
 func (s *Packer) encodePointer(ptr reflect.Value) error {
-    if ptr.IsNil() {
-        err := s.PackBool(false)
-        if err != nil {
-            return err
-        }
-    } else {
-        err := s.PackBool(true)
-        if err != nil {
-            return err
-        }
+    needToWriteValue, _, err := s.encodePointerHeader(ptr)
+    if err != nil {
+        return err
+    }
+    if needToWriteValue {
+        log.Debugf("pointer: %v",  ptr.Pointer())
         err = s.encodeValue(ptr.Elem())
         if err != nil {
             return err
         }
     }
     return nil
+}
+
+func (s *Packer) encodePointerHeader(ptr reflect.Value) (bool, bool, error) {
+    header := uint16(0)
+    if ptr.IsNil() {
+        header = 1
+        header = header << 15
+        err := s.PackUint16(header)
+        return false, false, err
+    }
+
+    needToWriteValue := true
+    rootPtr := false
+    header = header << 15
+    if ptrId, exists := s.ptrstoid[ptr.Pointer()]; exists {
+        header = header | ptrId
+        needToWriteValue = false
+    } else {
+        s.ptrstoid[ptr.Pointer()] = s.ptrIdCounter
+        header = header | s.ptrIdCounter
+        s.ptrIdCounter++
+    }
+    err := s.PackUint16(header)
+    return needToWriteValue, rootPtr, err
 }
 
 func (s *Packer) encodeInterface(iface reflect.Value) error {
@@ -708,6 +752,7 @@ func (s *Packer) PackMap(m interface{}) error {
 
 func (s *Packer) Unpack(data []byte, obj interface{}) error {
     buf := bytes.NewBuffer(data)
+    s.idstoptr = make(map[uint16]*decodingPtr, 0)
     switch obj.(type) {
     case Packable:
         return obj.(Packable).Unpack(s, buf)
@@ -717,10 +762,24 @@ func (s *Packer) Unpack(data []byte, obj interface{}) error {
             return errors.New("must pass a pointer to an object")
         }
         if v.Elem().Kind() == reflect.Struct {
-            // so we found struct
-            err := s.readStruct(buf, v.Elem())
+            flag, err := s.UnpackUint8(buf)
             if err != nil {
                 return err
+            }
+            if flag == 1 {
+                // encoded stuff was a pointer
+                err = s.readRootPointer(v, buf)
+                //val, err := s.readPointer(v.Type(), buf)
+                if err != nil {
+                    return err
+                }
+                //v.Elem().Set(val.Elem())
+            } else {
+                // so we found struct
+                err = s.readStruct(buf, v.Elem())
+                if err != nil {
+                    return err
+                }
             }
 
             return nil
@@ -778,12 +837,9 @@ func (s *Packer) readStruct(buf BPReader, objVal reflect.Value) error {
             }
             f.Set(st.Elem())
         case reflect.Ptr:
-            val, err := s.readPointer(ft, buf)
+            err := s.readPointerForStruct(ft, f, buf)
             if err != nil {
                 return err
-            }
-            if !val.IsNil() {
-                f.Set(val)
             }
         case reflect.String:
             str, err := s.UnpackString(buf)
@@ -944,20 +1000,98 @@ func (s *Packer) readMap(mapType reflect.Type, buf BPReader, readMap reflect.Val
 	return true, nil
 }
 
-func (s *Packer) readPointer(ptrType reflect.Type, buf BPReader) (reflect.Value, error) {
-    // first read ptr nil flag
-    notNil, err := s.UnpackBool(buf)
+func (s *Packer) readRootPointer(obj reflect.Value, buf BPReader) error {
+    // first read ptr header
+    header, err := s.UnpackUint16(buf)
+    if err != nil {
+        return err
+    }
+    isNil := header >> 15
+    if isNil == 0 {
+        ptrId := (header << 1) >> 1
+        if ptrId != 1 {
+            return errors.New("invalid root pointer")
+        }
+        s.idstoptr[ptrId] = &decodingPtr{
+            isDecoded: true,
+            ptr:       obj,
+        }
+        val, err := s.readBasicValues(obj.Type().Elem(), buf)
+        if err != nil {
+            return err
+        }
+        obj.Elem().Set(val)
+
+        return err
+
+    }
+    return nil
+}
+
+func (s *Packer) readPointer(ptrType reflect.Type, buf BPReader) (reflect.Value,  error) {
+    // first read ptr header
+    header, err := s.UnpackUint16(buf)
     if err != nil {
         return reflect.New(ptrType).Elem(), err
     }
-    if notNil {
-        val, err := s.readBasicValues(ptrType.Elem(), buf)
-        if err != nil {
-            return reflect.New(ptrType).Elem(), err
+    isNil := header >> 15
+    if isNil == 0 {
+        ptrId := (header << 1) >> 1
+        if s.idstoptr[ptrId] != nil {
+            if s.idstoptr[ptrId].isDecoded {
+                return s.idstoptr[ptrId].ptr, nil
+            }
+        } else {
+            s.idstoptr[ptrId] = &decodingPtr{
+                isDecoded: false,
+            }
+            val, err := s.readBasicValues(ptrType.Elem(), buf)
+            if err != nil {
+                return reflect.New(ptrType).Elem(), err
+            }
+            ptr := val.Addr()
+            s.idstoptr[ptrId].ptr = ptr
+
+            return ptr, err
         }
-        return val.Addr(), err
     }
-    return reflect.New(ptrType).Elem(), nil
+    return reflect.New(ptrType).Elem(),  nil
+}
+
+func (s *Packer) readPointerForStruct(ptrType reflect.Type, structFieldVal reflect.Value, buf BPReader) error {
+    // first read ptr header
+    header, err := s.UnpackUint16(buf)
+    if err != nil {
+        return err
+    }
+    isNil := header >> 15
+    if isNil == 0 {
+        ptrId := (header << 1) >> 1
+        if s.idstoptr[ptrId] != nil {
+            if s.idstoptr[ptrId].isDecoded {
+                structFieldVal.Set(s.idstoptr[ptrId].ptr)
+                return nil
+            } else {
+                s.idstoptr[ptrId].waiting = &structFieldVal
+            }
+        } else {
+            s.idstoptr[ptrId] = &decodingPtr{
+                isDecoded: false,
+            }
+            val, err := s.readBasicValues(ptrType.Elem(), buf)
+            if err != nil {
+                return err
+            }
+            ptr := val.Addr()
+            s.idstoptr[ptrId].ptr = ptr
+            if s.idstoptr[ptrId].waiting != nil {
+                s.idstoptr[ptrId].waiting.Set(ptr)
+            }
+            structFieldVal.Set(ptr)
+            return err
+        }
+    }
+    return nil
 }
 
 func (s *Packer) readInterface(buf BPReader) (*reflect.Value, error) {

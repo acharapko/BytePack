@@ -20,8 +20,6 @@ func Register(strct interface{}) {
     }
 }
 
-
-
 type BytePack struct {
     pool chan *Packer
 }
