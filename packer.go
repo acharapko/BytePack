@@ -1,24 +1,23 @@
 package bytepack
 
 import (
-    "bytes"
-    "encoding/binary"
-    "errors"
-    "fmt"
-    "github.com/acharapko/pbench/log"
-    "io"
-    "math"
-    "reflect"
-    "strconv"
+	"bytes"
+	"encoding/binary"
+	"errors"
+	"fmt"
+	"github.com/acharapko/pbench/log"
+	"io"
+	"math"
+	"reflect"
+	"strconv"
 )
 
 var intSize = strconv.IntSize / 8 // intSize in bytes
 var packableType = reflect.TypeOf((*Packable)(nil)).Elem()
 
-
 type BPReader interface {
-    io.ByteReader
-    io.Reader
+	io.ByteReader
+	io.Reader
 }
 
 // Packable
@@ -26,30 +25,30 @@ type BPReader interface {
    Packable interface allows struct to implement own Pack and Unpack methods for data serialization and deserialization.
 */
 type Packable interface {
-    Pack(s *Packer) error
-    Unpack(s *Packer, buf BPReader) error
+	Pack(s *Packer) error
+	Unpack(s *Packer, buf BPReader) error
 }
 
 type Packer struct {
-    w        *bytes.Buffer
+	w *bytes.Buffer
 
-    rootPtrEncoded  bool
-    ptrIdCounter    uint16
-    ptrstoid        map[uintptr]uint16
-    idstoptr        map[uint16]*decodingPtr
+	rootPtrEncoded bool
+	ptrIdCounter   uint16
+	ptrstoid       map[uintptr]uint16
+	idstoptr       map[uint16]*decodingPtr
 }
 
 type decodingPtr struct {
-    isDecoded bool
-    waiting *reflect.Value
-    ptr reflect.Value
+	isDecoded bool
+	waiting   *reflect.Value
+	ptr       reflect.Value
 }
 
 func NewPacker() *Packer {
-    return &Packer{
-        w: new(bytes.Buffer),
-        ptrIdCounter: 0,
-    }
+	return &Packer{
+		w:            new(bytes.Buffer),
+		ptrIdCounter: 0,
+	}
 }
 
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -57,68 +56,68 @@ func NewPacker() *Packer {
  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
 func (s *Packer) Pack(obj interface{}) ([]byte, error) {
-    s.ptrIdCounter = 1
-    s.rootPtrEncoded = false
-    s.ptrstoid = make(map[uintptr]uint16, 0)
-    err := s.encode(obj)
-    if err != nil {
-        return nil, err
-    }
-    retBytes := make([]byte, s.w.Len())
-    copy(retBytes, s.w.Bytes()) // make a copy of a slice, so we can reuse the buffer right away without overwriting
-    s.w.Reset()
-    return retBytes, nil
+	s.ptrIdCounter = 1
+	s.rootPtrEncoded = false
+	s.ptrstoid = make(map[uintptr]uint16, 0)
+	err := s.encode(obj)
+	if err != nil {
+		return nil, err
+	}
+	retBytes := make([]byte, s.w.Len())
+	copy(retBytes, s.w.Bytes()) // make a copy of a slice, so we can reuse the buffer right away without overwriting
+	s.w.Reset()
+	return retBytes, nil
 }
 
 func (s *Packer) encode(obj interface{}) error {
-    switch obj.(type) {
-    case Packable:
-        return obj.(Packable).Pack(s)
-    }
+	switch obj.(type) {
+	case Packable:
+		return obj.(Packable).Pack(s)
+	}
 
-    t := reflect.TypeOf(obj)
-    if t.Kind() == reflect.Struct {
-        if s.ptrIdCounter == 1 {
-            s.ptrIdCounter = 2
-        }
-        v := reflect.ValueOf(obj)
-        p := reflect.New(t)
-        piface := p.Interface()
-        switch piface.(type) {
-        case Packable:
-            p.Elem().Set(v)
-            return piface.(Packable).Pack(s)
-        }
-        err := s.PackUint8(0)
-        if err != nil {
-            return err
-        }
-        err = s.encodeStruct(v)
-        if err != nil {
-            return err
-        }
-    } else if t.Kind() == reflect.Ptr {
-        v := reflect.ValueOf(obj)
-        if v.IsNil() {
-            return errors.New("cannot encode nil struct")
-        }
-        if v.Elem().Kind() == reflect.Struct {
-            err := s.PackUint8(1)
-            if err != nil {
-                return err
-            }
-            err = s.encodePointer(v)
-            if err != nil {
-                return err
-            }
-        } else if v.Elem().Kind() == reflect.Interface {
-            return s.encode(v.Elem().Interface())
-        } else {
-            return errors.New(fmt.Sprintf("cannot encode non-struct. Got: %v", v.Elem().Kind()))
-        }
-    }
+	t := reflect.TypeOf(obj)
+	if t.Kind() == reflect.Struct {
+		if s.ptrIdCounter == 1 {
+			s.ptrIdCounter = 2
+		}
+		v := reflect.ValueOf(obj)
+		p := reflect.New(t)
+		piface := p.Interface()
+		switch piface.(type) {
+		case Packable:
+			p.Elem().Set(v)
+			return piface.(Packable).Pack(s)
+		}
+		err := s.PackUint8(0)
+		if err != nil {
+			return err
+		}
+		err = s.encodeStruct(v)
+		if err != nil {
+			return err
+		}
+	} else if t.Kind() == reflect.Ptr {
+		v := reflect.ValueOf(obj)
+		if v.IsNil() {
+			return errors.New("cannot encode nil struct")
+		}
+		if v.Elem().Kind() == reflect.Struct {
+			err := s.PackUint8(1)
+			if err != nil {
+				return err
+			}
+			err = s.encodePointer(v)
+			if err != nil {
+				return err
+			}
+		} else if v.Elem().Kind() == reflect.Interface {
+			return s.encode(v.Elem().Interface())
+		} else {
+			return errors.New(fmt.Sprintf("cannot encode non-struct. Got: %v", v.Elem().Kind()))
+		}
+	}
 
-    return nil
+	return nil
 }
 
 /*-----------------------------------
@@ -126,371 +125,371 @@ func (s *Packer) encode(obj interface{}) error {
  -----------------------------------*/
 
 func (s *Packer) encodeStruct(v reflect.Value) error {
-    for i := 0; i < v.NumField(); i++ {
-        err := s.encodeValue(v.Field(i))
-        if err != nil {
-            return err
-        }
-    }
-    return nil
+	for i := 0; i < v.NumField(); i++ {
+		err := s.encodeValue(v.Field(i))
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Packer) encodeValue(val reflect.Value) error {
-    switch val.Kind() {
-    case reflect.Struct:
-        err := s.encodeStruct(val)
-        if err != nil {
-            return err
-        }
-    case reflect.String:
-        err := s.PackString(val.String())
-        if err != nil {
-            return err
-        }
-    case reflect.Int8:
-        err := s.PackInt8(int8(val.Int()))
-        if err != nil {
-            return err
-        }
-    case reflect.Int16:
-        err := s.PackInt16(int16(val.Int()))
-        if err != nil {
-            return err
-        }
-    case reflect.Int32:
-        err := s.PackInt32(int32(val.Int()))
-        if err != nil {
-            return err
-        }
-    case reflect.Int:
-        err := s.PackInt(int(val.Int()))
-        if err != nil {
-            return err
-        }
-    case reflect.Int64:
-        err := s.PackInt64(val.Int())
-        if err != nil {
-            return err
-        }
-    case reflect.Uint8:
-        err := s.PackUint8(uint8(val.Uint()))
-        if err != nil {
-            return err
-        }
-    case reflect.Uint16:
-        err := s.PackUint16(uint16(val.Uint()))
-        if err != nil {
-            return err
-        }
-    case reflect.Uint32:
-        err := s.PackUint32(uint32(val.Uint()))
-        if err != nil {
-            return err
-        }
-    case reflect.Uint:
-        err := s.PackUint(uint(val.Uint()))
-        if err != nil {
-            return err
-        }
-    case reflect.Uint64:
-        err := s.PackUint64(val.Uint())
-        if err != nil {
-            return err
-        }
-    case reflect.Float32:
-        err := s.PackFloat32(float32(val.Float()))
-        if err != nil {
-            return err
-        }
-    case reflect.Float64:
-        err := s.PackFloat64(val.Float())
-        if err != nil {
-            return err
-        }
-    case reflect.Bool:
-        err := s.PackBool(val.Bool())
-        if err != nil {
-            return err
-        }
-    case reflect.Slice:
-        err := s.encodeSlice(val)
-        if err != nil {
-            return err
-        }
-    case reflect.Array:
-        err := s.encodeArray(val)
-        if err != nil {
-            return err
-        }
-    case reflect.Map:
-        err := s.encodeMap(val)
-        if err != nil {
-            return err
-        }
-    case reflect.Ptr:
-        err := s.encodePointer(val)
-        if err != nil {
-            return err
-        }
-    case reflect.Interface:
-        err := s.encodeInterface(val)
-        if err != nil {
-            return err
-        }
-    }
-    return nil
+	switch val.Kind() {
+	case reflect.Struct:
+		err := s.encodeStruct(val)
+		if err != nil {
+			return err
+		}
+	case reflect.String:
+		err := s.PackString(val.String())
+		if err != nil {
+			return err
+		}
+	case reflect.Int8:
+		err := s.PackInt8(int8(val.Int()))
+		if err != nil {
+			return err
+		}
+	case reflect.Int16:
+		err := s.PackInt16(int16(val.Int()))
+		if err != nil {
+			return err
+		}
+	case reflect.Int32:
+		err := s.PackInt32(int32(val.Int()))
+		if err != nil {
+			return err
+		}
+	case reflect.Int:
+		err := s.PackInt(int(val.Int()))
+		if err != nil {
+			return err
+		}
+	case reflect.Int64:
+		err := s.PackInt64(val.Int())
+		if err != nil {
+			return err
+		}
+	case reflect.Uint8:
+		err := s.PackUint8(uint8(val.Uint()))
+		if err != nil {
+			return err
+		}
+	case reflect.Uint16:
+		err := s.PackUint16(uint16(val.Uint()))
+		if err != nil {
+			return err
+		}
+	case reflect.Uint32:
+		err := s.PackUint32(uint32(val.Uint()))
+		if err != nil {
+			return err
+		}
+	case reflect.Uint:
+		err := s.PackUint(uint(val.Uint()))
+		if err != nil {
+			return err
+		}
+	case reflect.Uint64:
+		err := s.PackUint64(val.Uint())
+		if err != nil {
+			return err
+		}
+	case reflect.Float32:
+		err := s.PackFloat32(float32(val.Float()))
+		if err != nil {
+			return err
+		}
+	case reflect.Float64:
+		err := s.PackFloat64(val.Float())
+		if err != nil {
+			return err
+		}
+	case reflect.Bool:
+		err := s.PackBool(val.Bool())
+		if err != nil {
+			return err
+		}
+	case reflect.Slice:
+		err := s.encodeSlice(val)
+		if err != nil {
+			return err
+		}
+	case reflect.Array:
+		err := s.encodeArray(val)
+		if err != nil {
+			return err
+		}
+	case reflect.Map:
+		err := s.encodeMap(val)
+		if err != nil {
+			return err
+		}
+	case reflect.Ptr:
+		err := s.encodePointer(val)
+		if err != nil {
+			return err
+		}
+	case reflect.Interface:
+		err := s.encodeInterface(val)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Packer) encodeValueWithType(val reflect.Value) error {
-    switch val.Kind() {
-    case reflect.Ptr:
-        dataType := val.Elem().Type()
-        err := s.PackBool(true) // true for pointer type
-        if err != nil {
-            return err
-        }
-        err = s.PackString(dataType.PkgPath() + dataType.Name())
-        if err != nil {
-            return err
-        }
-        err = s.encodeValue(val.Elem())
-        if err != nil {
-            return err
-        }
-    case reflect.Struct:
-        dataType := val.Type()
-        //log.Debugf("dt := %v", dataType)
-        err := s.PackBool(false) // false for non-pointers
-        if err != nil {
-            return err
-        }
-        err = s.PackString(dataType.PkgPath() + dataType.Name())
-        if err != nil {
-            return err
-        }
-        //err = s.encodeStruct(val)
-        err = s.encode(val.Interface())
-        if err != nil {
-            return err
-        }
-    }
-    return nil
+	switch val.Kind() {
+	case reflect.Ptr:
+		dataType := val.Elem().Type()
+		err := s.PackBool(true) // true for pointer type
+		if err != nil {
+			return err
+		}
+		err = s.PackString(dataType.PkgPath() + dataType.Name())
+		if err != nil {
+			return err
+		}
+		err = s.encodeValue(val.Elem())
+		if err != nil {
+			return err
+		}
+	case reflect.Struct:
+		dataType := val.Type()
+		//log.Debugf("dt := %v", dataType)
+		err := s.PackBool(false) // false for non-pointers
+		if err != nil {
+			return err
+		}
+		err = s.PackString(dataType.PkgPath() + dataType.Name())
+		if err != nil {
+			return err
+		}
+		err = s.encodeStruct(val)
+		//err = s.encode(val.Interface())
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Packer) encodePointer(ptr reflect.Value) error {
-    needToWriteValue, _, err := s.encodePointerHeader(ptr)
-    if err != nil {
-        return err
-    }
-    if needToWriteValue {
-        log.Debugf("pointer: %v",  ptr.Pointer())
-        err = s.encodeValue(ptr.Elem())
-        if err != nil {
-            return err
-        }
-    }
-    return nil
+	needToWriteValue, _, err := s.encodePointerHeader(ptr)
+	if err != nil {
+		return err
+	}
+	if needToWriteValue {
+		log.Debugf("pointer: %v", ptr.Pointer())
+		err = s.encodeValue(ptr.Elem())
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Packer) encodePointerHeader(ptr reflect.Value) (bool, bool, error) {
-    header := uint16(0)
-    if ptr.IsNil() {
-        header = 1
-        header = header << 15
-        err := s.PackUint16(header)
-        return false, false, err
-    }
+	header := uint16(0)
+	if ptr.IsNil() {
+		header = 1
+		header = header << 15
+		err := s.PackUint16(header)
+		return false, false, err
+	}
 
-    needToWriteValue := true
-    rootPtr := false
-    header = header << 15
-    if ptrId, exists := s.ptrstoid[ptr.Pointer()]; exists {
-        header = header | ptrId
-        needToWriteValue = false
-    } else {
-        s.ptrstoid[ptr.Pointer()] = s.ptrIdCounter
-        header = header | s.ptrIdCounter
-        s.ptrIdCounter++
-    }
-    err := s.PackUint16(header)
-    return needToWriteValue, rootPtr, err
+	needToWriteValue := true
+	rootPtr := false
+	header = header << 15
+	if ptrId, exists := s.ptrstoid[ptr.Pointer()]; exists {
+		header = header | ptrId
+		needToWriteValue = false
+	} else {
+		s.ptrstoid[ptr.Pointer()] = s.ptrIdCounter
+		header = header | s.ptrIdCounter
+		s.ptrIdCounter++
+	}
+	err := s.PackUint16(header)
+	return needToWriteValue, rootPtr, err
 }
 
 func (s *Packer) encodeInterface(iface reflect.Value) error {
-    if iface.IsNil() {
-        err := s.PackBool(false)
-        if err != nil {
-            return err
-        }
-    } else {
-        err := s.PackBool(true)
-        if err != nil {
-            return err
-        }
-        err = s.encodeValueWithType(iface.Elem())
-        if err != nil {
-            return err
-        }
-        //log.Debugf("iface elem kind: %v", iface.Elem().Kind())
-    }
-    return nil
+	if iface.IsNil() {
+		err := s.PackBool(false)
+		if err != nil {
+			return err
+		}
+	} else {
+		err := s.PackBool(true)
+		if err != nil {
+			return err
+		}
+		err = s.encodeValueWithType(iface.Elem())
+		if err != nil {
+			return err
+		}
+		//log.Debugf("iface elem kind: %v", iface.Elem().Kind())
+	}
+	return nil
 }
 
 func (s *Packer) encodeMap(m reflect.Value) error {
-    if m.IsNil() {
-        return s.PackBool(true)
-    }
-    err := s.PackBool(false)
-    // write down the number of kv-pairs
-    mapLen := m.Len()
-    err = s.PackInt32(int32(mapLen))
-    if err != nil {
-        return err
-    }
+	if m.IsNil() {
+		return s.PackBool(true)
+	}
+	err := s.PackBool(false)
+	// write down the number of kv-pairs
+	mapLen := m.Len()
+	err = s.PackInt32(int32(mapLen))
+	if err != nil {
+		return err
+	}
 
-    for _, key := range m.MapKeys() {
-        //write key
-        err = s.encodeValue(key)
-        if err != nil {
-            return err
-        }
-        //write value
-        val := m.MapIndex(key)
-        err = s.encodeValue(val)
-        if err != nil {
-            return err
-        }
-    }
-    return nil
+	for _, key := range m.MapKeys() {
+		//write key
+		err = s.encodeValue(key)
+		if err != nil {
+			return err
+		}
+		//write value
+		val := m.MapIndex(key)
+		err = s.encodeValue(val)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Packer) encodeArray(arrayValue reflect.Value) error {
-    // when dealing with slices, first write the number of elements
-    arrayLen := arrayValue.Len()
-    arrayKind := reflect.TypeOf(arrayValue.Interface()).Elem().Kind()
-    switch arrayKind {
-    case reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Uint, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Bool, reflect.Float32, reflect.Float64:
-        err := binary.Write(s.w, binary.BigEndian, arrayValue.Interface())
-        if err != nil {
-            return err
-        }
-    case reflect.Uint8:
-        for i := 0; i < arrayLen; i++ {
-            err := s.w.WriteByte(byte(arrayValue.Index(i).Uint()))
-            if err != nil {
-                return err
-            }
-        }
-        /*_, err := s.w.Write(arrayValue.
-        if err != nil {
-            return err
-        }*/
-    case reflect.Int:
-        err := s.writeIntSliceOrArray(arrayValue)
-        if err != nil {
-            return err
-        }
-    case reflect.String:
-        for i := 0; i < arrayLen; i++ {
-            err := s.PackString(arrayValue.Index(i).String())
-            if err != nil {
-                return err
-            }
-        }
-    case reflect.Struct:
-        for i := 0; i < arrayLen; i++ {
-            //err := s.encodeStruct(arrayValue.Index(i))
-            err := s.encode(arrayValue.Index(i).Interface())
-            if err != nil {
-                return err
-            }
-        }
-    case reflect.Map:
-        for i := 0; i < arrayLen; i++ {
-            err := s.encodeMap(arrayValue.Index(i))
-            if err != nil {
-                return err
-            }
-        }
-    case reflect.Ptr:
-        for i := 0; i < arrayLen; i++ {
-            err := s.encodePointer(arrayValue.Index(i))
-            if err != nil {
-                return err
-            }
-        }
-    }
-    return nil
+	// when dealing with slices, first write the number of elements
+	arrayLen := arrayValue.Len()
+	arrayKind := reflect.TypeOf(arrayValue.Interface()).Elem().Kind()
+	switch arrayKind {
+	case reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Uint, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Bool, reflect.Float32, reflect.Float64:
+		err := binary.Write(s.w, binary.BigEndian, arrayValue.Interface())
+		if err != nil {
+			return err
+		}
+	case reflect.Uint8:
+		for i := 0; i < arrayLen; i++ {
+			err := s.w.WriteByte(byte(arrayValue.Index(i).Uint()))
+			if err != nil {
+				return err
+			}
+		}
+		/*_, err := s.w.Write(arrayValue.
+		  if err != nil {
+		      return err
+		  }*/
+	case reflect.Int:
+		err := s.writeIntSliceOrArray(arrayValue)
+		if err != nil {
+			return err
+		}
+	case reflect.String:
+		for i := 0; i < arrayLen; i++ {
+			err := s.PackString(arrayValue.Index(i).String())
+			if err != nil {
+				return err
+			}
+		}
+	case reflect.Struct:
+		for i := 0; i < arrayLen; i++ {
+			//err := s.encodeStruct(arrayValue.Index(i))
+			err := s.encode(arrayValue.Index(i).Interface())
+			if err != nil {
+				return err
+			}
+		}
+	case reflect.Map:
+		for i := 0; i < arrayLen; i++ {
+			err := s.encodeMap(arrayValue.Index(i))
+			if err != nil {
+				return err
+			}
+		}
+	case reflect.Ptr:
+		for i := 0; i < arrayLen; i++ {
+			err := s.encodePointer(arrayValue.Index(i))
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (s *Packer) encodeSlice(sliceValue reflect.Value) error {
-    if sliceValue.IsNil() {
-        return s.PackBool(true)
-    }
-    err := s.PackBool(false)
-    if err != nil {
-        return err
-    }
-    // when dealing with slices, first write the number of elements
-    sliceLen := sliceValue.Len()
-    err = s.PackInt32(int32(sliceLen))
-    if err != nil {
-        return err
-    }
-    //valueField.Slice()
-    sliceKind := reflect.TypeOf(sliceValue.Interface()).Elem().Kind()
-    switch sliceKind {
-    case reflect.Int8, reflect.Int16, reflect.Int32, reflect.Uint, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Bool, reflect.Float32, reflect.Float64:
-        err = binary.Write(s.w, binary.BigEndian, sliceValue.Interface())
-        if err != nil {
-            return err
-        }
-    case reflect.Uint8:
-        _, err = s.w.Write(sliceValue.Bytes())
-        if err != nil {
-            return err
-        }
-    case reflect.Int64:
-        err = s.writeInt64SliceOrArray(sliceValue)
-        if err != nil {
-            return err
-        }
-    case reflect.Int:
-        err = s.writeIntSliceOrArray(sliceValue)
-        if err != nil {
-            return err
-        }
-    case reflect.String:
-        for i := 0; i < sliceLen; i++ {
-            err = s.PackString(sliceValue.Index(i).String())
-            if err != nil {
-                return err
-            }
-        }
-    case reflect.Struct:
-        for i := 0; i < sliceLen; i++ {
-            err = s.encodeStruct(sliceValue.Index(i))
-            //err := s.encode(sliceValue.Index(i).Interface())
-            if err != nil {
-                return err
-            }
-        }
-    case reflect.Map:
-        for i := 0; i < sliceLen; i++ {
-            err = s.encodeMap(sliceValue.Index(i))
-            if err != nil {
-                return err
-            }
-        }
-    case reflect.Ptr:
-        for i := 0; i < sliceLen; i++ {
-            err = s.encodePointer(sliceValue.Index(i))
-            if err != nil {
-                return err
-            }
-        }
-    }
-    return nil
+	if sliceValue.IsNil() {
+		return s.PackBool(true)
+	}
+	err := s.PackBool(false)
+	if err != nil {
+		return err
+	}
+	// when dealing with slices, first write the number of elements
+	sliceLen := sliceValue.Len()
+	err = s.PackInt32(int32(sliceLen))
+	if err != nil {
+		return err
+	}
+	//valueField.Slice()
+	sliceKind := reflect.TypeOf(sliceValue.Interface()).Elem().Kind()
+	switch sliceKind {
+	case reflect.Int8, reflect.Int16, reflect.Int32, reflect.Uint, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Bool, reflect.Float32, reflect.Float64:
+		err = binary.Write(s.w, binary.BigEndian, sliceValue.Interface())
+		if err != nil {
+			return err
+		}
+	case reflect.Uint8:
+		_, err = s.w.Write(sliceValue.Bytes())
+		if err != nil {
+			return err
+		}
+	case reflect.Int64:
+		err = s.writeInt64SliceOrArray(sliceValue)
+		if err != nil {
+			return err
+		}
+	case reflect.Int:
+		err = s.writeIntSliceOrArray(sliceValue)
+		if err != nil {
+			return err
+		}
+	case reflect.String:
+		for i := 0; i < sliceLen; i++ {
+			err = s.PackString(sliceValue.Index(i).String())
+			if err != nil {
+				return err
+			}
+		}
+	case reflect.Struct:
+		for i := 0; i < sliceLen; i++ {
+			err = s.encodeStruct(sliceValue.Index(i))
+			//err := s.encode(sliceValue.Index(i).Interface())
+			if err != nil {
+				return err
+			}
+		}
+	case reflect.Map:
+		for i := 0; i < sliceLen; i++ {
+			err = s.encodeMap(sliceValue.Index(i))
+			if err != nil {
+				return err
+			}
+		}
+	case reflect.Ptr:
+		for i := 0; i < sliceLen; i++ {
+			err = s.encodePointer(sliceValue.Index(i))
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 /*-----------------------------------
@@ -498,476 +497,456 @@ func (s *Packer) encodeSlice(sliceValue reflect.Value) error {
  -----------------------------------*/
 
 func (s *Packer) PackString(str string) error {
-    err := s.PackInt32(int32(len(str)))
-    if err != nil {
-        return err
-    }
-    _, err = s.w.WriteString(str)
-    return err
+	err := s.PackInt32(int32(len(str)))
+	if err != nil {
+		return err
+	}
+	_, err = s.w.WriteString(str)
+	return err
 }
 
 func (s *Packer) writeInt64SliceOrArray(arrayValue reflect.Value) error {
-    arrayLen := arrayValue.Len()
-    bs := make([]byte, 8 * arrayLen)
-    for i := 0; i < arrayLen; i++ {
-        uival := uint64(arrayValue.Index(i).Int())
-        bs[8*i] = byte(uival >> 56)
-        bs[8*i+1] = byte(uival >> 48)
-        bs[8*i+2] = byte(uival >> 40)
-        bs[8*i+3] = byte(uival >> 32)
-        bs[8*i+4] = byte(uival >> 24)
-        bs[8*i+5] = byte(uival >> 16)
-        bs[8*i+6] = byte(uival >> 8)
-        bs[8*i+7] = byte(uival)
-    }
-    _, err := s.w.Write(bs)
-    return err
+	arrayLen := arrayValue.Len()
+	bs := make([]byte, 8*arrayLen)
+	for i := 0; i < arrayLen; i++ {
+		uival := uint64(arrayValue.Index(i).Int())
+		bs[8*i] = byte(uival >> 56)
+		bs[8*i+1] = byte(uival >> 48)
+		bs[8*i+2] = byte(uival >> 40)
+		bs[8*i+3] = byte(uival >> 32)
+		bs[8*i+4] = byte(uival >> 24)
+		bs[8*i+5] = byte(uival >> 16)
+		bs[8*i+6] = byte(uival >> 8)
+		bs[8*i+7] = byte(uival)
+	}
+	_, err := s.w.Write(bs)
+	return err
 }
 
 func (s *Packer) writeIntSliceOrArray(arrayValue reflect.Value) error {
-    arrayLen := arrayValue.Len()
-    if intSize == 8 {
-        bs := make([]byte, 8 * arrayLen)
-        for i := 0; i < arrayLen; i++ {
-            uival := uint64(arrayValue.Index(i).Int())
-            bs[8*i] = byte(uival >> 56)
-            bs[8*i+1] = byte(uival >> 48)
-            bs[8*i+2] = byte(uival >> 40)
-            bs[8*i+3] = byte(uival >> 32)
-            bs[8*i+4] = byte(uival >> 24)
-            bs[8*i+5] = byte(uival >> 16)
-            bs[8*i+6] = byte(uival >> 8)
-            bs[8*i+7] = byte(uival)
-        }
-        _, err := s.w.Write(bs)
-        return err
-    } else if intSize == 4 {
-        bs := make([]byte, 4 * arrayLen)
-        for i := 0; i < arrayLen; i++ {
-            uival := uint32(arrayValue.Index(i).Int())
-            bs[8*i] = byte(uival >> 24)
-            bs[8*i+1] = byte(uival >> 16)
-            bs[8*i+2] = byte(uival >> 8)
-            bs[8*i+3] = byte(uival)
-        }
-        _, err := s.w.Write(bs)
-        return err
-    }
-    return errors.New("unknown int size")
+	arrayLen := arrayValue.Len()
+	if intSize == 8 {
+		bs := make([]byte, 8*arrayLen)
+		for i := 0; i < arrayLen; i++ {
+			uival := uint64(arrayValue.Index(i).Int())
+			bs[8*i] = byte(uival >> 56)
+			bs[8*i+1] = byte(uival >> 48)
+			bs[8*i+2] = byte(uival >> 40)
+			bs[8*i+3] = byte(uival >> 32)
+			bs[8*i+4] = byte(uival >> 24)
+			bs[8*i+5] = byte(uival >> 16)
+			bs[8*i+6] = byte(uival >> 8)
+			bs[8*i+7] = byte(uival)
+		}
+		_, err := s.w.Write(bs)
+		return err
+	} else if intSize == 4 {
+		bs := make([]byte, 4*arrayLen)
+		for i := 0; i < arrayLen; i++ {
+			uival := uint32(arrayValue.Index(i).Int())
+			bs[8*i] = byte(uival >> 24)
+			bs[8*i+1] = byte(uival >> 16)
+			bs[8*i+2] = byte(uival >> 8)
+			bs[8*i+3] = byte(uival)
+		}
+		_, err := s.w.Write(bs)
+		return err
+	}
+	return errors.New("unknown int size")
 }
 
 func (s *Packer) PackInt32(ival int32) error {
-    uival := uint32(ival)
-    err := s.w.WriteByte(byte(uival >> 24))
-    if err != nil {
-        return err
-    }
-    err = s.w.WriteByte(byte(uival >> 16))
-    if err != nil {
-        return err
-    }
-    err = s.w.WriteByte(byte(uival >> 8))
-    if err != nil {
-        return err
-    }
-    err = s.w.WriteByte(byte(uival))
-    return err
+	uival := uint32(ival)
+	err := s.w.WriteByte(byte(uival >> 24))
+	if err != nil {
+		return err
+	}
+	err = s.w.WriteByte(byte(uival >> 16))
+	if err != nil {
+		return err
+	}
+	err = s.w.WriteByte(byte(uival >> 8))
+	if err != nil {
+		return err
+	}
+	err = s.w.WriteByte(byte(uival))
+	return err
 }
 
 func (s *Packer) PackInt64(ival int64) error {
-    uival := uint64(ival)
-    err := s.w.WriteByte(byte(uival >> 56))
-    if err != nil {
-        return err
-    }
-    err = s.w.WriteByte(byte(uival >> 48))
-    if err != nil {
-        return err
-    }
-    err = s.w.WriteByte(byte(uival >> 40))
-    if err != nil {
-        return err
-    }
-    err = s.w.WriteByte(byte(uival >> 32))
-    if err != nil {
-        return err
-    }
-    err = s.w.WriteByte(byte(uival >> 24))
-    if err != nil {
-        return err
-    }
-    err = s.w.WriteByte(byte(uival >> 16))
-    if err != nil {
-        return err
-    }
-    err = s.w.WriteByte(byte(uival >> 8))
-    if err != nil {
-        return err
-    }
-    err = s.w.WriteByte(byte(uival))
-    return err
+	uival := uint64(ival)
+	err := s.w.WriteByte(byte(uival >> 56))
+	if err != nil {
+		return err
+	}
+	err = s.w.WriteByte(byte(uival >> 48))
+	if err != nil {
+		return err
+	}
+	err = s.w.WriteByte(byte(uival >> 40))
+	if err != nil {
+		return err
+	}
+	err = s.w.WriteByte(byte(uival >> 32))
+	if err != nil {
+		return err
+	}
+	err = s.w.WriteByte(byte(uival >> 24))
+	if err != nil {
+		return err
+	}
+	err = s.w.WriteByte(byte(uival >> 16))
+	if err != nil {
+		return err
+	}
+	err = s.w.WriteByte(byte(uival >> 8))
+	if err != nil {
+		return err
+	}
+	err = s.w.WriteByte(byte(uival))
+	return err
 }
 
 func (s *Packer) PackInt(ival int) error {
-    if intSize == 8 {
-        return s.PackInt64(int64(ival))
-    } else if intSize == 4 {
-        return s.PackInt32(int32(ival))
-    }
-    return errors.New("unknown int size")
+	if intSize == 8 {
+		return s.PackInt64(int64(ival))
+	} else if intSize == 4 {
+		return s.PackInt32(int32(ival))
+	}
+	return errors.New("unknown int size")
 }
 
 func (s *Packer) PackInt8(ival int8) error {
-    return s.w.WriteByte(uint8(ival))
+	return s.w.WriteByte(uint8(ival))
 }
 
 func (s *Packer) PackInt16(ival int16) error {
-    uival := uint16(ival)
-    err := s.w.WriteByte(byte(uival >> 8))
-    if err != nil {
-        return err
-    }
-    err = s.w.WriteByte(byte(uival))
-    return err
+	uival := uint16(ival)
+	err := s.w.WriteByte(byte(uival >> 8))
+	if err != nil {
+		return err
+	}
+	err = s.w.WriteByte(byte(uival))
+	return err
 }
 
 func (s *Packer) PackUint(ival uint) error {
-    return binary.Write(s.w, binary.BigEndian, ival)
+	return binary.Write(s.w, binary.BigEndian, ival)
 }
 
 func (s *Packer) PackUint8(uival uint8) error {
-    return s.w.WriteByte(uival)
+	return s.w.WriteByte(uival)
 }
 
 func (s *Packer) PackUint16(uival uint16) error {
-    err := s.w.WriteByte(byte(uival >> 8))
-    if err != nil {
-        return err
-    }
-    err = s.w.WriteByte(byte(uival))
-    return err
+	err := s.w.WriteByte(byte(uival >> 8))
+	if err != nil {
+		return err
+	}
+	err = s.w.WriteByte(byte(uival))
+	return err
 }
 
 func (s *Packer) PackUint32(uival uint32) error {
-    err := s.w.WriteByte(byte(uival >> 24))
-    if err != nil {
-        return err
-    }
-    err = s.w.WriteByte(byte(uival >> 16))
-    if err != nil {
-        return err
-    }
-    err = s.w.WriteByte(byte(uival >> 8))
-    if err != nil {
-        return err
-    }
-    err = s.w.WriteByte(byte(uival))
-    return err
+	err := s.w.WriteByte(byte(uival >> 24))
+	if err != nil {
+		return err
+	}
+	err = s.w.WriteByte(byte(uival >> 16))
+	if err != nil {
+		return err
+	}
+	err = s.w.WriteByte(byte(uival >> 8))
+	if err != nil {
+		return err
+	}
+	err = s.w.WriteByte(byte(uival))
+	return err
 }
 
 func (s *Packer) PackUint64(uival uint64) error {
-    err := s.w.WriteByte(byte(uival >> 56))
-    if err != nil {
-        return err
-    }
-    err = s.w.WriteByte(byte(uival >> 48))
-    if err != nil {
-        return err
-    }
-    err = s.w.WriteByte(byte(uival >> 40))
-    if err != nil {
-        return err
-    }
-    err = s.w.WriteByte(byte(uival >> 32))
-    if err != nil {
-        return err
-    }
-    err = s.w.WriteByte(byte(uival >> 24))
-    if err != nil {
-        return err
-    }
-    err = s.w.WriteByte(byte(uival >> 16))
-    if err != nil {
-        return err
-    }
-    err = s.w.WriteByte(byte(uival >> 8))
-    if err != nil {
-        return err
-    }
-    err = s.w.WriteByte(byte(uival))
-    return err
+	err := s.w.WriteByte(byte(uival >> 56))
+	if err != nil {
+		return err
+	}
+	err = s.w.WriteByte(byte(uival >> 48))
+	if err != nil {
+		return err
+	}
+	err = s.w.WriteByte(byte(uival >> 40))
+	if err != nil {
+		return err
+	}
+	err = s.w.WriteByte(byte(uival >> 32))
+	if err != nil {
+		return err
+	}
+	err = s.w.WriteByte(byte(uival >> 24))
+	if err != nil {
+		return err
+	}
+	err = s.w.WriteByte(byte(uival >> 16))
+	if err != nil {
+		return err
+	}
+	err = s.w.WriteByte(byte(uival >> 8))
+	if err != nil {
+		return err
+	}
+	err = s.w.WriteByte(byte(uival))
+	return err
 }
 
 func (s *Packer) PackFloat64(fval float64) error {
-    return s.PackUint64(math.Float64bits(fval))
+	return s.PackUint64(math.Float64bits(fval))
 }
 
 func (s *Packer) PackFloat32(fval float32) error {
-    return s.PackUint32(math.Float32bits(fval))
+	return s.PackUint32(math.Float32bits(fval))
 }
 
 func (s *Packer) PackBool(bval bool) error {
-    //return binary.Write(s.w, binary.BigEndian, bval)
-    if bval {
-        return s.w.WriteByte(1)
-    } else {
-        return s.w.WriteByte(0)
-    }
+	//return binary.Write(s.w, binary.BigEndian, bval)
+	if bval {
+		return s.w.WriteByte(1)
+	} else {
+		return s.w.WriteByte(0)
+	}
 }
 
 func (s *Packer) PackStruct(obj interface{}) error {
-    return s.encode(obj)
+	return s.encode(obj)
 }
 
 func (s *Packer) PackSlice(slice interface{}) error {
-    sliceVal := reflect.ValueOf(slice)
-    if sliceVal.Type().Kind() == reflect.Slice {
-        err := s.encodeSlice(sliceVal)
-        if err != nil {
-            return err
-        }
-    } else {
-        return errors.New("not a slice")
-    }
-    return nil
+	sliceVal := reflect.ValueOf(slice)
+	if sliceVal.Type().Kind() == reflect.Slice {
+		err := s.encodeSlice(sliceVal)
+		if err != nil {
+			return err
+		}
+	} else {
+		return errors.New("not a slice")
+	}
+	return nil
 }
 
 func (s *Packer) PackMap(m interface{}) error {
-    mapVal := reflect.ValueOf(m)
-    if mapVal.Type().Kind() == reflect.Map {
-        err := s.encodeMap(mapVal)
-        if err != nil {
-            return err
-        }
-    } else {
-        return errors.New("not a slice")
-    }
-    return nil
+	mapVal := reflect.ValueOf(m)
+	if mapVal.Type().Kind() == reflect.Map {
+		err := s.encodeMap(mapVal)
+		if err != nil {
+			return err
+		}
+	} else {
+		return errors.New("not a slice")
+	}
+	return nil
 }
-
 
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
  *                                                  Unpacking
  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
 func (s *Packer) Unpack(data []byte, obj interface{}) error {
-    buf := bytes.NewBuffer(data)
-    s.idstoptr = make(map[uint16]*decodingPtr, 0)
-    switch obj.(type) {
-    case Packable:
-        return obj.(Packable).Unpack(s, buf)
-    default:
-        v := reflect.ValueOf(obj)
-        if v.Kind() != reflect.Ptr {
-            return errors.New("must pass a pointer to an object")
-        }
-        if v.Elem().Kind() == reflect.Struct {
-            flag, err := s.UnpackUint8(buf)
-            if err != nil {
-                return err
-            }
-            if flag == 1 {
-                // encoded stuff was a pointer
-                err = s.readRootPointer(v, buf)
-                //val, err := s.readPointer(v.Type(), buf)
-                if err != nil {
-                    return err
-                }
-                //v.Elem().Set(val.Elem())
-            } else {
-                // so we found struct
-                err = s.readStruct(buf, v.Elem())
-                if err != nil {
-                    return err
-                }
-            }
-
-            return nil
-        }
-    }
-
-    return nil
+	buf := bytes.NewBuffer(data)
+	return s.UnpackFromReader(buf, obj)
 }
 
 func (s *Packer) UnpackFromReader(buf BPReader, obj interface{}) error {
-    switch obj.(type) {
-    case Packable:
-        return obj.(Packable).Unpack(s, buf)
-    default:
-        v := reflect.ValueOf(obj)
-        if v.Kind() != reflect.Ptr {
-            return errors.New("must pass a pointer to an object")
-        }
-        if v.Elem().Kind() == reflect.Struct {
-            // so we found struct
-            err := s.readStruct(buf, v.Elem())
-            if err != nil {
-                return err
-            }
+	s.idstoptr = make(map[uint16]*decodingPtr, 0)
+	switch obj.(type) {
+	case Packable:
+		return obj.(Packable).Unpack(s, buf)
+	default:
+		v := reflect.ValueOf(obj)
+		if v.Kind() != reflect.Ptr {
+			return errors.New("must pass a pointer to an object")
+		}
+		if v.Elem().Kind() == reflect.Struct {
+			flag, err := s.UnpackUint8(buf)
+			if err != nil {
+				return err
+			}
+			if flag == 1 {
+				// encoded stuff was a pointer
+				err = s.readRootPointer(v, buf)
+				//val, err := s.readPointer(v.Type(), buf)
+				if err != nil {
+					return err
+				}
+				//v.Elem().Set(val.Elem())
+			} else {
+				// so we found struct
+				err = s.readStruct(buf, v.Elem())
+				if err != nil {
+					return err
+				}
+			}
 
-            return nil
-        }
-    }
+			return nil
+		}
+	}
 
-    return nil
+	return nil
 }
 
 func (s *Packer) readStruct(buf BPReader, objVal reflect.Value) error {
-    numFields := objVal.NumField()
-    for i := 0; i < numFields; i++ {
-        f := objVal.Field(i)
-        ft := objVal.Field(i).Type()
-        // we could have used the readBasicValues method here:
-        // ---------------------
-        /*val, err := s.readBasicValues(ft.Type, buf)
-        if err != nil {
-            return err
-        }
-        f.Set(val)*/
-        // ---------------------
-        //but it seems to have worse perf than rewriting it specific to the struct
+	numFields := objVal.NumField()
+	for i := 0; i < numFields; i++ {
+		f := objVal.Field(i)
+		ft := objVal.Field(i).Type()
+		// we could have used the readBasicValues method here:
+		// ---------------------
+		/*val, err := s.readBasicValues(ft.Type, buf)
+		  if err != nil {
+		      return err
+		  }
+		  f.Set(val)*/
+		// ---------------------
+		//but it seems to have worse perf than rewriting it specific to the struct
 
-        switch ft.Kind() {
-        case reflect.Struct:
-            //initializeStruct(ft.Type, f)
-            st := reflect.New(ft)
-            err := s.readStruct(buf, st.Elem())
-            if err != nil {
-                return err
-            }
-            f.Set(st.Elem())
-        case reflect.Ptr:
-            err := s.readPointerForStruct(ft, f, buf)
-            if err != nil {
-                return err
-            }
-        case reflect.String:
-            str, err := s.UnpackString(buf)
-            if err != nil {
-                return err
-            }
-            f.SetString(str)
-        case reflect.Int:
-            if intSize == 8 {
-                intVal, err := s.UnpackInt64(buf)
-                if err != nil {
-                    return err
-                }
-                f.SetInt(intVal)
-            } else if intSize == 4 {
-                intVal, err := s.UnpackInt32(buf)
-                if err != nil {
-                    return err
-                }
-                f.SetInt(int64(intVal))
-            }
-        case reflect.Int32:
-            intVal, err := s.UnpackInt32(buf)
-            if err != nil {
-                return err
-            }
-            f.SetInt(int64(intVal))
-        case reflect.Int64:
-            intVal, err := s.UnpackInt64(buf)
-            if err != nil {
-                return err
-            }
-            f.SetInt(intVal)
-        case reflect.Float64:
-            floatVal, err := s.UnpackFloat64(buf)
-            if err != nil {
-                return err
-            }
-            f.SetFloat(floatVal)
-        case reflect.Float32:
-            floatVal, err := s.UnpackFloat32(buf)
-            if err != nil {
-                return err
-            }
-            f.SetFloat(float64(floatVal))
-        case reflect.Bool:
-            var boolVal bool
-            err := binary.Read(buf, binary.BigEndian, &boolVal)
-            if err != nil {
-                return err
-            }
-            f.SetBool(boolVal)
-        case reflect.Int8:
-            intVal, err := s.UnpackInt8(buf)
-            if err != nil {
-                return err
-            }
-            f.SetInt(int64(intVal))
-        case reflect.Int16:
-            intVal, err := s.UnpackInt16(buf)
-            if err != nil {
-                return err
-            }
-            f.SetInt(int64(intVal))
-        case reflect.Uint8:
-            intVal, err := s.UnpackUint8(buf)
-            if err != nil {
-                return err
-            }
-            f.SetUint(uint64(intVal))
-        case reflect.Uint16:
-            intVal, err := s.UnpackUint16(buf)
-            if err != nil {
-                return err
-            }
-            f.SetUint(uint64(intVal))
-        case reflect.Uint32:
-            intVal, err := s.UnpackUint32(buf)
-            if err != nil {
-                return err
-            }
-            f.SetUint(uint64(intVal))
-        case reflect.Uint64:
-            intVal, err := s.UnpackUint64(buf)
-            if err != nil {
-                return err
-            }
-            f.SetUint(intVal)
-        case reflect.Slice:
-            sliceVal, err := s.UnpackSlice(ft, buf)
-            if err != nil {
-                return err
-            }
-            if sliceVal != nil {
-                f.Set(*sliceVal)
-            }
-        case reflect.Array:
-            arrayVal, err := s.UnpackArray(ft, buf)
-            if err != nil {
-                return err
-            }
-            f.Set(*arrayVal)
-        case reflect.Map:
-            decodedMap := reflect.MakeMap(ft)
-            exists, err := s.readMap(ft, buf, decodedMap)
-            if err != nil {
-                return err
-            }
-            if exists {
-                f.Set(decodedMap)
-            }
-        case reflect.Interface:
-            val, err := s.readInterface(buf)
-            if err != nil {
-                log.Errorf("Error reading interface. Partial object: %v", f.Interface())
-                return err
-            }
-            if val != nil {
-                f.Set(*val)
-            }
-        case reflect.Chan:
-            // do nothing with the chan and leave it nil
-        default:
-            return errors.New(fmt.Sprintf("decoding unsupported type %v", ft.Kind()))
-        }
-    }
+		switch ft.Kind() {
+		case reflect.Struct:
+			//initializeStruct(ft.Type, f)
+			st := reflect.New(ft)
+			err := s.readStruct(buf, st.Elem())
+			if err != nil {
+				return err
+			}
+			f.Set(st.Elem())
+		case reflect.Ptr:
+			err := s.readPointerForStruct(ft, f, buf)
+			if err != nil {
+				return err
+			}
+		case reflect.String:
+			str, err := s.UnpackString(buf)
+			if err != nil {
+				return err
+			}
+			f.SetString(str)
+		case reflect.Int:
+			if intSize == 8 {
+				intVal, err := s.UnpackInt64(buf)
+				if err != nil {
+					return err
+				}
+				f.SetInt(intVal)
+			} else if intSize == 4 {
+				intVal, err := s.UnpackInt32(buf)
+				if err != nil {
+					return err
+				}
+				f.SetInt(int64(intVal))
+			}
+		case reflect.Int32:
+			intVal, err := s.UnpackInt32(buf)
+			if err != nil {
+				return err
+			}
+			f.SetInt(int64(intVal))
+		case reflect.Int64:
+			intVal, err := s.UnpackInt64(buf)
+			if err != nil {
+				return err
+			}
+			f.SetInt(intVal)
+		case reflect.Float64:
+			floatVal, err := s.UnpackFloat64(buf)
+			if err != nil {
+				return err
+			}
+			f.SetFloat(floatVal)
+		case reflect.Float32:
+			floatVal, err := s.UnpackFloat32(buf)
+			if err != nil {
+				return err
+			}
+			f.SetFloat(float64(floatVal))
+		case reflect.Bool:
+			var boolVal bool
+			err := binary.Read(buf, binary.BigEndian, &boolVal)
+			if err != nil {
+				return err
+			}
+			f.SetBool(boolVal)
+		case reflect.Int8:
+			intVal, err := s.UnpackInt8(buf)
+			if err != nil {
+				return err
+			}
+			f.SetInt(int64(intVal))
+		case reflect.Int16:
+			intVal, err := s.UnpackInt16(buf)
+			if err != nil {
+				return err
+			}
+			f.SetInt(int64(intVal))
+		case reflect.Uint8:
+			intVal, err := s.UnpackUint8(buf)
+			if err != nil {
+				return err
+			}
+			f.SetUint(uint64(intVal))
+		case reflect.Uint16:
+			intVal, err := s.UnpackUint16(buf)
+			if err != nil {
+				return err
+			}
+			f.SetUint(uint64(intVal))
+		case reflect.Uint32:
+			intVal, err := s.UnpackUint32(buf)
+			if err != nil {
+				return err
+			}
+			f.SetUint(uint64(intVal))
+		case reflect.Uint64:
+			intVal, err := s.UnpackUint64(buf)
+			if err != nil {
+				return err
+			}
+			f.SetUint(intVal)
+		case reflect.Slice:
+			sliceVal, err := s.UnpackSlice(ft, buf)
+			if err != nil {
+				return err
+			}
+			if sliceVal != nil {
+				f.Set(*sliceVal)
+			}
+		case reflect.Array:
+			arrayVal, err := s.UnpackArray(ft, buf)
+			if err != nil {
+				return err
+			}
+			f.Set(*arrayVal)
+		case reflect.Map:
+			decodedMap := reflect.MakeMap(ft)
+			exists, err := s.readMap(ft, buf, decodedMap)
+			if err != nil {
+				return err
+			}
+			if exists {
+				f.Set(decodedMap)
+			}
+		case reflect.Interface:
+			val, err := s.readInterface(buf)
+			if err != nil {
+				log.Errorf("Error reading interface. Partial object: %v", f.Interface())
+				return err
+			}
+			if val != nil {
+				f.Set(*val)
+			}
+		case reflect.Chan:
+			// do nothing with the chan and leave it nil
+		default:
+			return errors.New(fmt.Sprintf("decoding unsupported type %v", ft.Kind()))
+		}
+	}
 
-    return nil
+	return nil
 }
 
 func (s *Packer) readMap(mapType reflect.Type, buf BPReader, readMap reflect.Value) (bool, error) {
@@ -1001,269 +980,269 @@ func (s *Packer) readMap(mapType reflect.Type, buf BPReader, readMap reflect.Val
 }
 
 func (s *Packer) readRootPointer(obj reflect.Value, buf BPReader) error {
-    // first read ptr header
-    header, err := s.UnpackUint16(buf)
-    if err != nil {
-        return err
-    }
-    isNil := header >> 15
-    if isNil == 0 {
-        ptrId := (header << 1) >> 1
-        if ptrId != 1 {
-            return errors.New("invalid root pointer")
-        }
-        s.idstoptr[ptrId] = &decodingPtr{
-            isDecoded: true,
-            ptr:       obj,
-        }
-        val, err := s.readBasicValues(obj.Type().Elem(), buf)
-        if err != nil {
-            return err
-        }
-        obj.Elem().Set(val)
+	// first read ptr header
+	header, err := s.UnpackUint16(buf)
+	if err != nil {
+		return err
+	}
+	isNil := header >> 15
+	if isNil == 0 {
+		ptrId := (header << 1) >> 1
+		if ptrId != 1 {
+			return errors.New("invalid root pointer")
+		}
+		s.idstoptr[ptrId] = &decodingPtr{
+			isDecoded: true,
+			ptr:       obj,
+		}
+		val, err := s.readBasicValues(obj.Type().Elem(), buf)
+		if err != nil {
+			return err
+		}
+		obj.Elem().Set(val)
 
-        return err
+		return err
 
-    }
-    return nil
+	}
+	return nil
 }
 
-func (s *Packer) readPointer(ptrType reflect.Type, buf BPReader) (reflect.Value,  error) {
-    // first read ptr header
-    header, err := s.UnpackUint16(buf)
-    if err != nil {
-        return reflect.New(ptrType).Elem(), err
-    }
-    isNil := header >> 15
-    if isNil == 0 {
-        ptrId := (header << 1) >> 1
-        if s.idstoptr[ptrId] != nil {
-            if s.idstoptr[ptrId].isDecoded {
-                return s.idstoptr[ptrId].ptr, nil
-            }
-        } else {
-            s.idstoptr[ptrId] = &decodingPtr{
-                isDecoded: false,
-            }
-            val, err := s.readBasicValues(ptrType.Elem(), buf)
-            if err != nil {
-                return reflect.New(ptrType).Elem(), err
-            }
-            ptr := val.Addr()
-            s.idstoptr[ptrId].ptr = ptr
+func (s *Packer) readPointer(ptrType reflect.Type, buf BPReader) (reflect.Value, error) {
+	// first read ptr header
+	header, err := s.UnpackUint16(buf)
+	if err != nil {
+		return reflect.New(ptrType).Elem(), err
+	}
+	isNil := header >> 15
+	if isNil == 0 {
+		ptrId := (header << 1) >> 1
+		if s.idstoptr[ptrId] != nil {
+			if s.idstoptr[ptrId].isDecoded {
+				return s.idstoptr[ptrId].ptr, nil
+			}
+		} else {
+			s.idstoptr[ptrId] = &decodingPtr{
+				isDecoded: false,
+			}
+			val, err := s.readBasicValues(ptrType.Elem(), buf)
+			if err != nil {
+				return reflect.New(ptrType).Elem(), err
+			}
+			ptr := val.Addr()
+			s.idstoptr[ptrId].ptr = ptr
 
-            return ptr, err
-        }
-    }
-    return reflect.New(ptrType).Elem(),  nil
+			return ptr, err
+		}
+	}
+	return reflect.New(ptrType).Elem(), nil
 }
 
 func (s *Packer) readPointerForStruct(ptrType reflect.Type, structFieldVal reflect.Value, buf BPReader) error {
-    // first read ptr header
-    header, err := s.UnpackUint16(buf)
-    if err != nil {
-        return err
-    }
-    isNil := header >> 15
-    if isNil == 0 {
-        ptrId := (header << 1) >> 1
-        if s.idstoptr[ptrId] != nil {
-            if s.idstoptr[ptrId].isDecoded {
-                structFieldVal.Set(s.idstoptr[ptrId].ptr)
-                return nil
-            } else {
-                s.idstoptr[ptrId].waiting = &structFieldVal
-            }
-        } else {
-            s.idstoptr[ptrId] = &decodingPtr{
-                isDecoded: false,
-            }
-            val, err := s.readBasicValues(ptrType.Elem(), buf)
-            if err != nil {
-                return err
-            }
-            ptr := val.Addr()
-            s.idstoptr[ptrId].ptr = ptr
-            if s.idstoptr[ptrId].waiting != nil {
-                s.idstoptr[ptrId].waiting.Set(ptr)
-            }
-            structFieldVal.Set(ptr)
-            return err
-        }
-    }
-    return nil
+	// first read ptr header
+	header, err := s.UnpackUint16(buf)
+	if err != nil {
+		return err
+	}
+	isNil := header >> 15
+	if isNil == 0 {
+		ptrId := (header << 1) >> 1
+		if s.idstoptr[ptrId] != nil {
+			if s.idstoptr[ptrId].isDecoded {
+				structFieldVal.Set(s.idstoptr[ptrId].ptr)
+				return nil
+			} else {
+				s.idstoptr[ptrId].waiting = &structFieldVal
+			}
+		} else {
+			s.idstoptr[ptrId] = &decodingPtr{
+				isDecoded: false,
+			}
+			val, err := s.readBasicValues(ptrType.Elem(), buf)
+			if err != nil {
+				return err
+			}
+			ptr := val.Addr()
+			s.idstoptr[ptrId].ptr = ptr
+			if s.idstoptr[ptrId].waiting != nil {
+				s.idstoptr[ptrId].waiting.Set(ptr)
+			}
+			structFieldVal.Set(ptr)
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Packer) readInterface(buf BPReader) (*reflect.Value, error) {
-    // first read interface nil flag
-    notNil, err := s.UnpackBool(buf)
-    if err != nil {
-        return nil, err
-    }
-    if notNil {
-        // read if pointer
-        isPointer, err := s.UnpackBool(buf)
-        if err != nil {
-            return nil, err
-        }
-        // read the type
-        typeStr, err := s.UnpackString(buf)
-        if err != nil {
-            return nil, err
-        }
-        if ifaceType, exists := registeredStructs[typeStr]; exists {
-            val, err := s.readBasicValues(ifaceType, buf)
-            if err != nil {
-                return nil, err
-            }
-            if isPointer {
-                val = val.Addr()
-            }
-            return &val, err
-        } else {
-            if len(typeStr) > 255 {
-                return nil, errors.New(fmt.Sprintf("type %s... is not registered", typeStr[0:255]))
-            }
-            return nil, errors.New(fmt.Sprintf("type %s is not registered", typeStr))
-        }
-    }
-    return nil, nil
+	// first read interface nil flag
+	notNil, err := s.UnpackBool(buf)
+	if err != nil {
+		return nil, err
+	}
+	if notNil {
+		// read if pointer
+		isPointer, err := s.UnpackBool(buf)
+		if err != nil {
+			return nil, err
+		}
+		// read the type
+		typeStr, err := s.UnpackString(buf)
+		if err != nil {
+			return nil, err
+		}
+		if ifaceType, exists := registeredStructs[typeStr]; exists {
+			val, err := s.readBasicValues(ifaceType, buf)
+			if err != nil {
+				return nil, err
+			}
+			if isPointer {
+				val = val.Addr()
+			}
+			return &val, err
+		} else {
+			if len(typeStr) > 255 {
+				return nil, errors.New(fmt.Sprintf("type %s... is not registered", typeStr[0:255]))
+			}
+			return nil, errors.New(fmt.Sprintf("type %s is not registered", typeStr))
+		}
+	}
+	return nil, nil
 }
 
 func (s *Packer) readBasicValues(valType reflect.Type, buf BPReader) (reflect.Value, error) {
-    val := reflect.New(valType)
-    switch valType.Kind() {
-    case reflect.Int:
-        if intSize == 8 {
-            intVal, err := s.UnpackInt64(buf)
-            if err != nil {
-                return val, err
-            }
-            val = reflect.ValueOf(intVal)
-        } else if intSize == 4 {
-            intVal, err := s.UnpackInt32(buf)
-            if err != nil {
-                return val, err
-            }
-            val = reflect.ValueOf(intVal)
-        }
-    case reflect.Int8:
-        intVal, err := s.UnpackInt8(buf)
-        if err != nil {
-            return val, err
-        }
-        val = reflect.ValueOf(intVal)
-    case reflect.Int16:
-        intVal, err := s.UnpackInt16(buf)
-        if err != nil {
-            return val, err
-        }
-        val = reflect.ValueOf(intVal)
-    case reflect.Uint:
-        if intSize == 8 {
-            intVal, err := s.UnpackUint64(buf)
-            if err != nil {
-                return val, err
-            }
-            val = reflect.ValueOf(intVal)
-        } else if intSize == 4 {
-            intVal, err := s.UnpackUint32(buf)
-            if err != nil {
-                return val, err
-            }
-            val = reflect.ValueOf(intVal)
-        }
-    case reflect.Uint8:
-        intVal, err := s.UnpackInt8(buf)
-        if err != nil {
-            return val, err
-        }
-        val = reflect.ValueOf(intVal)
-    case reflect.Uint16:
-        intVal, err := s.UnpackInt16(buf)
-        if err != nil {
-            return val, err
-        }
-        val = reflect.ValueOf(intVal)
-    case reflect.Uint32:
-        intVal, err := s.UnpackInt32(buf)
-        if err != nil {
-            return val, err
-        }
-        val = reflect.ValueOf(intVal)
-    case reflect.Uint64:
-        intVal, err := s.UnpackInt64(buf)
-        if err != nil {
-            return val, err
-        }
-        val = reflect.ValueOf(intVal)
-    case reflect.Int32:
-        intVal, err := s.UnpackInt32(buf)
-        if err != nil {
-            return val, err
-        }
-        val = reflect.ValueOf(intVal)
-    case reflect.Int64:
-        intVal, err := s.UnpackInt64(buf)
-        if err != nil {
-            return val, err
-        }
-        val = reflect.ValueOf(intVal)
-    case reflect.Float64:
-        floatVal, err := s.UnpackFloat64(buf)
-        if err != nil {
-            return val, err
-        }
-        val = reflect.ValueOf(floatVal)
-    case reflect.Float32:
-        floatVal, err := s.UnpackFloat32(buf)
-        if err != nil {
-            return val, err
-        }
-        val = reflect.ValueOf(floatVal)
-    case reflect.Bool:
-        var boolVal bool
-        err := binary.Read(buf, binary.BigEndian, &boolVal)
-        if err != nil {
-            return val, err
-        }
-        val = reflect.ValueOf(boolVal)
-    case reflect.String:
-        strVal, err := s.UnpackString(buf)
-        if err != nil {
-            return val, err
-        }
-        val = reflect.ValueOf(strVal)
-    case reflect.Struct:
-        err := s.readStruct(buf, val.Elem())
-        if err != nil {
-            return val, err
-        }
-        val = val.Elem()
-    case reflect.Slice:
-        sliceVal, err := s.UnpackSlice(valType, buf)
-        if err != nil {
-            return val, err
-        }
-        val = *sliceVal
-        //log.Debugf("slice type = %v", ft.Type)
-    case reflect.Map:
-        decodedMap := reflect.MakeMap(valType)
-        _, err := s.readMap(valType, buf, decodedMap)
-        if err != nil {
-            return val, err
-        }
-        val = decodedMap
-    case reflect.Ptr:
-        var err error
-        val, err = s.readPointer(valType, buf)
-        if err != nil {
-            return val, err
-        }
-    case reflect.Chan:
-        // do nothing with the chan and leave it nil
-    }
-    return val, nil
+	val := reflect.New(valType)
+	switch valType.Kind() {
+	case reflect.Int:
+		if intSize == 8 {
+			intVal, err := s.UnpackInt64(buf)
+			if err != nil {
+				return val, err
+			}
+			val = reflect.ValueOf(intVal)
+		} else if intSize == 4 {
+			intVal, err := s.UnpackInt32(buf)
+			if err != nil {
+				return val, err
+			}
+			val = reflect.ValueOf(intVal)
+		}
+	case reflect.Int8:
+		intVal, err := s.UnpackInt8(buf)
+		if err != nil {
+			return val, err
+		}
+		val = reflect.ValueOf(intVal)
+	case reflect.Int16:
+		intVal, err := s.UnpackInt16(buf)
+		if err != nil {
+			return val, err
+		}
+		val = reflect.ValueOf(intVal)
+	case reflect.Uint:
+		if intSize == 8 {
+			intVal, err := s.UnpackUint64(buf)
+			if err != nil {
+				return val, err
+			}
+			val = reflect.ValueOf(intVal)
+		} else if intSize == 4 {
+			intVal, err := s.UnpackUint32(buf)
+			if err != nil {
+				return val, err
+			}
+			val = reflect.ValueOf(intVal)
+		}
+	case reflect.Uint8:
+		intVal, err := s.UnpackInt8(buf)
+		if err != nil {
+			return val, err
+		}
+		val = reflect.ValueOf(intVal)
+	case reflect.Uint16:
+		intVal, err := s.UnpackInt16(buf)
+		if err != nil {
+			return val, err
+		}
+		val = reflect.ValueOf(intVal)
+	case reflect.Uint32:
+		intVal, err := s.UnpackInt32(buf)
+		if err != nil {
+			return val, err
+		}
+		val = reflect.ValueOf(intVal)
+	case reflect.Uint64:
+		intVal, err := s.UnpackInt64(buf)
+		if err != nil {
+			return val, err
+		}
+		val = reflect.ValueOf(intVal)
+	case reflect.Int32:
+		intVal, err := s.UnpackInt32(buf)
+		if err != nil {
+			return val, err
+		}
+		val = reflect.ValueOf(intVal)
+	case reflect.Int64:
+		intVal, err := s.UnpackInt64(buf)
+		if err != nil {
+			return val, err
+		}
+		val = reflect.ValueOf(intVal)
+	case reflect.Float64:
+		floatVal, err := s.UnpackFloat64(buf)
+		if err != nil {
+			return val, err
+		}
+		val = reflect.ValueOf(floatVal)
+	case reflect.Float32:
+		floatVal, err := s.UnpackFloat32(buf)
+		if err != nil {
+			return val, err
+		}
+		val = reflect.ValueOf(floatVal)
+	case reflect.Bool:
+		var boolVal bool
+		err := binary.Read(buf, binary.BigEndian, &boolVal)
+		if err != nil {
+			return val, err
+		}
+		val = reflect.ValueOf(boolVal)
+	case reflect.String:
+		strVal, err := s.UnpackString(buf)
+		if err != nil {
+			return val, err
+		}
+		val = reflect.ValueOf(strVal)
+	case reflect.Struct:
+		err := s.readStruct(buf, val.Elem())
+		if err != nil {
+			return val, err
+		}
+		val = val.Elem()
+	case reflect.Slice:
+		sliceVal, err := s.UnpackSlice(valType, buf)
+		if err != nil {
+			return val, err
+		}
+		val = *sliceVal
+		//log.Debugf("slice type = %v", ft.Type)
+	case reflect.Map:
+		decodedMap := reflect.MakeMap(valType)
+		_, err := s.readMap(valType, buf, decodedMap)
+		if err != nil {
+			return val, err
+		}
+		val = decodedMap
+	case reflect.Ptr:
+		var err error
+		val, err = s.readPointer(valType, buf)
+		if err != nil {
+			return val, err
+		}
+	case reflect.Chan:
+		// do nothing with the chan and leave it nil
+	}
+	return val, nil
 }
 
 /*-----------------------------------
@@ -1271,252 +1250,252 @@ func (s *Packer) readBasicValues(valType reflect.Type, buf BPReader) (reflect.Va
  -----------------------------------*/
 
 func (s *Packer) UnpackString(buf BPReader) (string, error) {
-    strLen, err := s.UnpackInt32(buf)
-    if err != nil {
-        return "", err
-    }
+	strLen, err := s.UnpackInt32(buf)
+	if err != nil {
+		return "", err
+	}
 
-    strBuf := make([]byte, strLen)
-    _, err = io.ReadFull(buf, strBuf)
-    if err != nil {
-        return "", err
-    }
-    return string(strBuf), nil
+	strBuf := make([]byte, strLen)
+	_, err = io.ReadFull(buf, strBuf)
+	if err != nil {
+		return "", err
+	}
+	return string(strBuf), nil
 }
 
 func (s *Packer) UnpackInt8(buf BPReader) (int8, error) {
-    var err error
-    b1, err := buf.ReadByte()
-    if err != nil {
-        return 0, err
-    }
-    return int8(b1), nil
+	var err error
+	b1, err := buf.ReadByte()
+	if err != nil {
+		return 0, err
+	}
+	return int8(b1), nil
 }
 
 func (s *Packer) UnpackInt16(buf BPReader) (int16, error) {
-    var i uint16
-    var err error
-    b1, err := buf.ReadByte()
-    if err != nil {
-        return 0, err
-    }
-    b2, err := buf.ReadByte()
-    if err != nil {
-        return 0, err
-    }
-    i = uint16(b2) | uint16(b1)<<8
-    return int16(i), nil
+	var i uint16
+	var err error
+	b1, err := buf.ReadByte()
+	if err != nil {
+		return 0, err
+	}
+	b2, err := buf.ReadByte()
+	if err != nil {
+		return 0, err
+	}
+	i = uint16(b2) | uint16(b1)<<8
+	return int16(i), nil
 }
 
 func (s *Packer) UnpackInt32(buf BPReader) (int32, error) {
-    var i uint32
-    var err error
-    b1, err := buf.ReadByte()
-    if err != nil {
-        return 0, err
-    }
-    b2, err := buf.ReadByte()
-    if err != nil {
-        return 0, err
-    }
-    b3, err := buf.ReadByte()
-    if err != nil {
-        return 0, err
-    }
-    b4, err := buf.ReadByte()
-    if err != nil {
-        return 0, err
-    }
-    i = uint32(b4) | uint32(b3)<<8 | uint32(b2)<<16 | uint32(b1)<<24
-    return int32(i), nil
+	var i uint32
+	var err error
+	b1, err := buf.ReadByte()
+	if err != nil {
+		return 0, err
+	}
+	b2, err := buf.ReadByte()
+	if err != nil {
+		return 0, err
+	}
+	b3, err := buf.ReadByte()
+	if err != nil {
+		return 0, err
+	}
+	b4, err := buf.ReadByte()
+	if err != nil {
+		return 0, err
+	}
+	i = uint32(b4) | uint32(b3)<<8 | uint32(b2)<<16 | uint32(b1)<<24
+	return int32(i), nil
 }
 
 func (s *Packer) UnpackInt64(buf BPReader) (int64, error) {
-    var i uint64
-    var err error
-    b1, err := buf.ReadByte()
-    if err != nil {
-        return 0, err
-    }
-    b2, err := buf.ReadByte()
-    if err != nil {
-        return 0, err
-    }
-    b3, err := buf.ReadByte()
-    if err != nil {
-        return 0, err
-    }
-    b4, err := buf.ReadByte()
-    if err != nil {
-        return 0, err
-    }
-    b5, err := buf.ReadByte()
-    if err != nil {
-        return 0, err
-    }
-    b6, err := buf.ReadByte()
-    if err != nil {
-        return 0, err
-    }
-    b7, err := buf.ReadByte()
-    if err != nil {
-        return 0, err
-    }
-    b8, err := buf.ReadByte()
-    if err != nil {
-        return 0, err
-    }
-    i = uint64(b8) | uint64(b7)<<8 | uint64(b6)<<16 | uint64(b5)<<24 | uint64(b4)<<32 | uint64(b3)<<40 | uint64(b2)<<48 | uint64(b1)<<56
-    return int64(i), nil
+	var i uint64
+	var err error
+	b1, err := buf.ReadByte()
+	if err != nil {
+		return 0, err
+	}
+	b2, err := buf.ReadByte()
+	if err != nil {
+		return 0, err
+	}
+	b3, err := buf.ReadByte()
+	if err != nil {
+		return 0, err
+	}
+	b4, err := buf.ReadByte()
+	if err != nil {
+		return 0, err
+	}
+	b5, err := buf.ReadByte()
+	if err != nil {
+		return 0, err
+	}
+	b6, err := buf.ReadByte()
+	if err != nil {
+		return 0, err
+	}
+	b7, err := buf.ReadByte()
+	if err != nil {
+		return 0, err
+	}
+	b8, err := buf.ReadByte()
+	if err != nil {
+		return 0, err
+	}
+	i = uint64(b8) | uint64(b7)<<8 | uint64(b6)<<16 | uint64(b5)<<24 | uint64(b4)<<32 | uint64(b3)<<40 | uint64(b2)<<48 | uint64(b1)<<56
+	return int64(i), nil
 }
 
 func (s *Packer) UnpackInt(buf BPReader) (int, error) {
-    if intSize == 8 {
-        i, err := s.UnpackInt64(buf)
-        return int(i), err
-    } else if intSize == 4 {
-        i, err := s.UnpackInt32(buf)
-        return int(i), err
-    }
-    return 0, errors.New("int must be 4 or 8 bytes depending on the system")
+	if intSize == 8 {
+		i, err := s.UnpackInt64(buf)
+		return int(i), err
+	} else if intSize == 4 {
+		i, err := s.UnpackInt32(buf)
+		return int(i), err
+	}
+	return 0, errors.New("int must be 4 or 8 bytes depending on the system")
 }
 
 func (s *Packer) UnpackUint8(buf BPReader) (uint8, error) {
-    return buf.ReadByte()
+	return buf.ReadByte()
 }
 
 func (s *Packer) UnpackUint16(buf BPReader) (uint16, error) {
-    var i uint16
-    var err error
-    b1, err := buf.ReadByte()
-    if err != nil {
-        return 0, err
-    }
-    b2, err := buf.ReadByte()
-    if err != nil {
-        return 0, err
-    }
-    i = uint16(b2) | uint16(b1)<<8
-    return i, nil
+	var i uint16
+	var err error
+	b1, err := buf.ReadByte()
+	if err != nil {
+		return 0, err
+	}
+	b2, err := buf.ReadByte()
+	if err != nil {
+		return 0, err
+	}
+	i = uint16(b2) | uint16(b1)<<8
+	return i, nil
 }
 
 func (s *Packer) UnpackUint32(buf BPReader) (uint32, error) {
-    var i uint32
-    var err error
-    b1, err := buf.ReadByte()
-    if err != nil {
-        return 0, err
-    }
-    b2, err := buf.ReadByte()
-    if err != nil {
-        return 0, err
-    }
-    b3, err := buf.ReadByte()
-    if err != nil {
-        return 0, err
-    }
-    b4, err := buf.ReadByte()
-    if err != nil {
-        return 0, err
-    }
-    i = uint32(b4) | uint32(b3)<<8 | uint32(b2)<<16 | uint32(b1)<<24
-    return i, nil
+	var i uint32
+	var err error
+	b1, err := buf.ReadByte()
+	if err != nil {
+		return 0, err
+	}
+	b2, err := buf.ReadByte()
+	if err != nil {
+		return 0, err
+	}
+	b3, err := buf.ReadByte()
+	if err != nil {
+		return 0, err
+	}
+	b4, err := buf.ReadByte()
+	if err != nil {
+		return 0, err
+	}
+	i = uint32(b4) | uint32(b3)<<8 | uint32(b2)<<16 | uint32(b1)<<24
+	return i, nil
 }
 
 func (s *Packer) UnpackUint64(buf BPReader) (uint64, error) {
-    var i uint64
-    var err error
-    b1, err := buf.ReadByte()
-    if err != nil {
-        return 0, err
-    }
-    b2, err := buf.ReadByte()
-    if err != nil {
-        return 0, err
-    }
-    b3, err := buf.ReadByte()
-    if err != nil {
-        return 0, err
-    }
-    b4, err := buf.ReadByte()
-    if err != nil {
-        return 0, err
-    }
-    b5, err := buf.ReadByte()
-    if err != nil {
-        return 0, err
-    }
-    b6, err := buf.ReadByte()
-    if err != nil {
-        return 0, err
-    }
-    b7, err := buf.ReadByte()
-    if err != nil {
-        return 0, err
-    }
-    b8, err := buf.ReadByte()
-    if err != nil {
-        return 0, err
-    }
-    i = uint64(b8) | uint64(b7)<<8 | uint64(b6)<<16 | uint64(b5)<<24 | uint64(b4)<<32 | uint64(b3)<<40 | uint64(b2)<<48 | uint64(b1)<<56
-    return i, nil
+	var i uint64
+	var err error
+	b1, err := buf.ReadByte()
+	if err != nil {
+		return 0, err
+	}
+	b2, err := buf.ReadByte()
+	if err != nil {
+		return 0, err
+	}
+	b3, err := buf.ReadByte()
+	if err != nil {
+		return 0, err
+	}
+	b4, err := buf.ReadByte()
+	if err != nil {
+		return 0, err
+	}
+	b5, err := buf.ReadByte()
+	if err != nil {
+		return 0, err
+	}
+	b6, err := buf.ReadByte()
+	if err != nil {
+		return 0, err
+	}
+	b7, err := buf.ReadByte()
+	if err != nil {
+		return 0, err
+	}
+	b8, err := buf.ReadByte()
+	if err != nil {
+		return 0, err
+	}
+	i = uint64(b8) | uint64(b7)<<8 | uint64(b6)<<16 | uint64(b5)<<24 | uint64(b4)<<32 | uint64(b3)<<40 | uint64(b2)<<48 | uint64(b1)<<56
+	return i, nil
 }
 
 func (s *Packer) UnpackUint(buf BPReader) (uint, error) {
-    if intSize == 8 {
-        i, err := s.UnpackUint64(buf)
-        return uint(i), err
-    } else if intSize == 4 {
-        i, err := s.UnpackUint32(buf)
-        return uint(i), err
-    }
-    return 0, errors.New("int must be 4 or 8 bytes depending on the system")
+	if intSize == 8 {
+		i, err := s.UnpackUint64(buf)
+		return uint(i), err
+	} else if intSize == 4 {
+		i, err := s.UnpackUint32(buf)
+		return uint(i), err
+	}
+	return 0, errors.New("int must be 4 or 8 bytes depending on the system")
 }
 
 func (s *Packer) UnpackFloat64(buf BPReader) (float64, error) {
-    bits, err := s.UnpackUint64(buf)
-    if err != nil {
-        return 0, err
-    }
-    f := math.Float64frombits(bits)
-    return f, err
+	bits, err := s.UnpackUint64(buf)
+	if err != nil {
+		return 0, err
+	}
+	f := math.Float64frombits(bits)
+	return f, err
 }
 
 func (s *Packer) UnpackFloat32(buf BPReader) (float32, error) {
-    bits, err := s.UnpackUint32(buf)
-    if err != nil {
-        return 0, err
-    }
-    f := math.Float32frombits(bits)
-    return f, err
+	bits, err := s.UnpackUint32(buf)
+	if err != nil {
+		return 0, err
+	}
+	f := math.Float32frombits(bits)
+	return f, err
 }
 
 func (s *Packer) UnpackBool(buf BPReader) (bool, error) {
-    var err error
-    b1, err := buf.ReadByte()
-    if err != nil {
-        return false, err
-    }
-    return b1 != 0, nil
+	var err error
+	b1, err := buf.ReadByte()
+	if err != nil {
+		return false, err
+	}
+	return b1 != 0, nil
 }
 
 func (s *Packer) UnpackStruct(buf BPReader, i interface{}) error {
-    iVal := reflect.ValueOf(i)
-    if iVal.Kind() == reflect.Ptr {
-        // expect a pointer to a struct
-        iVal = iVal.Elem()
-    } else {
-        return errors.New("expect a pointer to a struct")
-    }
-    if iVal.Kind() == reflect.Struct {
-        err := s.UnpackFromReader(buf, i)
-        if err != nil {
-            return err
-        }
-    } else {
-        return errors.New("not a struct")
-    }
-    return nil
+	iVal := reflect.ValueOf(i)
+	if iVal.Kind() == reflect.Ptr {
+		// expect a pointer to a struct
+		iVal = iVal.Elem()
+	} else {
+		return errors.New("expect a pointer to a struct")
+	}
+	if iVal.Kind() == reflect.Struct {
+		err := s.UnpackFromReader(buf, i)
+		if err != nil {
+			return err
+		}
+	} else {
+		return errors.New("not a struct")
+	}
+	return nil
 }
 
 func (s *Packer) UnpackArray(arrayType reflect.Type, buf BPReader) (*reflect.Value, error) {
@@ -1615,8 +1594,8 @@ func (s *Packer) UnpackSlice(sliceType reflect.Type, buf BPReader) (*reflect.Val
 		return &sliceValue, nil
 	case reflect.Uint8:
 		b := make([]byte, int(numEntries), int(numEntries))
-        _, err = io.ReadFull(buf, b)
-        if err != nil {
+		_, err = io.ReadFull(buf, b)
+		if err != nil {
 			return nil, err
 		}
 		reflectedB := reflect.ValueOf(b)
