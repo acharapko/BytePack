@@ -2,9 +2,11 @@ package bytepack
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
+	"math/rand"
 	"net"
 	"os"
 	"sync"
@@ -208,6 +210,67 @@ func TestPacker_EncodeReflectSimpleSerializablePassedAsPointer(t *testing.T) {
 	assert.Equal(t, a.Age, a2.Age)
 	assert.Equal(t, a.Height, a2.Height)
 	assert.Equal(t, a.Name, a2.Name)
+}
+
+func TestPacker_EncodeSlice(t *testing.T) {
+	byteSlice := make([]byte, 1024)
+	rnd := rand.New(rand.NewSource(42))
+	rnd.Read(byteSlice)
+
+	s := NewPacker()
+	buf, err := s.Pack(byteSlice)
+	assert.NoError(t, err)
+	assert.Greater(t, len(buf), 0)
+	fmt.Printf("buf len = %d\n", len(buf))
+
+	var decodedSlice []byte
+
+	err = s.Unpack(buf, &decodedSlice)
+	assert.NoError(t, err)
+	assert.Equal(t, len(byteSlice), len(decodedSlice))
+	assert.True(t, bytes.Equal(byteSlice, decodedSlice))
+}
+
+func TestPacker_EncodeSlice2(t *testing.T) {
+
+	type Key []byte
+
+	byteSlice := make([]byte, 1024)
+	rnd := rand.New(rand.NewSource(42))
+	rnd.Read(byteSlice)
+
+	keySlice := Key(byteSlice)
+
+	s := NewPacker()
+	buf, err := s.Pack(keySlice)
+	assert.NoError(t, err)
+	assert.Greater(t, len(buf), 0)
+	fmt.Printf("buf len = %d\n", len(buf))
+
+	var decodedSlice Key
+
+	err = s.Unpack(buf, &decodedSlice)
+	assert.NoError(t, err)
+	assert.Equal(t, len(keySlice), len(decodedSlice))
+	assert.True(t, bytes.Equal(keySlice, decodedSlice))
+}
+
+func TestPacker_EncodeBasicType(t *testing.T) {
+	rnd := rand.New(rand.NewSource(42))
+	ui64 := rnd.Uint64()
+
+	s := NewPacker()
+	buf, err := s.Pack(ui64)
+	assert.NoError(t, err)
+	assert.Greater(t, len(buf), 0)
+	fmt.Printf("buf len = %d\n", len(buf))
+
+	var decodedui64 uint64
+
+	err = s.Unpack(buf, &decodedui64)
+	assert.NoError(t, err)
+	assert.Equal(t, ui64, decodedui64)
+
 }
 
 func TestPacker_EncodeReflectSimpleAsInterface(t *testing.T) {

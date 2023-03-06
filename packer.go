@@ -76,7 +76,9 @@ func (s *Packer) encode(obj interface{}) error {
 	}
 
 	t := reflect.TypeOf(obj)
-	if t.Kind() == reflect.Struct {
+
+	switch t.Kind() {
+	case reflect.Struct:
 		if s.ptrIdCounter == 1 {
 			s.ptrIdCounter = 2
 		}
@@ -96,7 +98,7 @@ func (s *Packer) encode(obj interface{}) error {
 		if err != nil {
 			return err
 		}
-	} else if t.Kind() == reflect.Ptr {
+	case reflect.Ptr:
 		v := reflect.ValueOf(obj)
 		if v.IsNil() {
 			return errors.New("cannot encode nil struct")
@@ -113,8 +115,41 @@ func (s *Packer) encode(obj interface{}) error {
 		} else if v.Elem().Kind() == reflect.Interface {
 			return s.encode(v.Elem().Interface())
 		} else {
-			return errors.New(fmt.Sprintf("cannot encode non-struct. Got: %v", v.Elem().Kind()))
+			return errors.New(fmt.Sprintf("cannot encode poiners to non-struct. Got: %v", v.Elem().Kind()))
 		}
+	case reflect.Slice:
+		fallthrough
+	case reflect.Uint64:
+		fallthrough
+	case reflect.Uint32:
+		fallthrough
+	case reflect.Uint16:
+		fallthrough
+	case reflect.Uint8:
+		fallthrough
+	case reflect.Int:
+		fallthrough
+	case reflect.Int64:
+		fallthrough
+	case reflect.Int32:
+		fallthrough
+	case reflect.Int16:
+		fallthrough
+	case reflect.Int8:
+		fallthrough
+	case reflect.String:
+		fallthrough
+	case reflect.Bool:
+		fallthrough
+	case reflect.Float64:
+		fallthrough
+	case reflect.Float32:
+		err := s.encodeValue(reflect.ValueOf(obj))
+		if err != nil {
+			return err
+		}
+	default:
+		return errors.New(fmt.Sprintf("cannot encode %v", t.Kind()))
 	}
 
 	return nil
@@ -739,7 +774,7 @@ func (s *Packer) PackMap(m interface{}) error {
 			return err
 		}
 	} else {
-		return errors.New("not a slice")
+		return errors.New("not a map")
 	}
 	return nil
 }
@@ -763,7 +798,9 @@ func (s *Packer) UnpackFromReader(buf BPReader, obj interface{}) error {
 		if v.Kind() != reflect.Ptr {
 			return errors.New("must pass a pointer to an object")
 		}
-		if v.Elem().Kind() == reflect.Struct {
+
+		switch v.Elem().Kind() {
+		case reflect.Struct:
 			flag, err := s.UnpackUint8(buf)
 			if err != nil {
 				return err
@@ -783,11 +820,43 @@ func (s *Packer) UnpackFromReader(buf BPReader, obj interface{}) error {
 					return err
 				}
 			}
-
 			return nil
+		case reflect.Slice:
+			fallthrough
+		case reflect.Uint64:
+			fallthrough
+		case reflect.Uint32:
+			fallthrough
+		case reflect.Uint16:
+			fallthrough
+		case reflect.Uint8:
+			fallthrough
+		case reflect.Int:
+			fallthrough
+		case reflect.Int64:
+			fallthrough
+		case reflect.Int32:
+			fallthrough
+		case reflect.Int16:
+			fallthrough
+		case reflect.Int8:
+			fallthrough
+		case reflect.String:
+			fallthrough
+		case reflect.Bool:
+			fallthrough
+		case reflect.Float64:
+			fallthrough
+		case reflect.Float32:
+			val, err := s.readBasicValues(v.Elem().Type(), buf)
+			if err != nil {
+				return err
+			}
+			v.Elem().Set(val)
+		default:
+			return fmt.Errorf("cannot unpack this type")
 		}
 	}
-
 	return nil
 }
 
@@ -1111,7 +1180,8 @@ func (s *Packer) readInterface(buf BPReader) (*reflect.Value, error) {
 
 func (s *Packer) readBasicValues(valType reflect.Type, buf BPReader) (reflect.Value, error) {
 	val := reflect.New(valType)
-	switch valType.Kind() {
+	k := valType.Kind()
+	switch k {
 	case reflect.Int:
 		if intSize == 8 {
 			intVal, err := s.UnpackInt64(buf)
@@ -1171,7 +1241,7 @@ func (s *Packer) readBasicValues(valType reflect.Type, buf BPReader) (reflect.Va
 		}
 		val = reflect.ValueOf(intVal)
 	case reflect.Uint64:
-		intVal, err := s.UnpackInt64(buf)
+		intVal, err := s.UnpackUint64(buf)
 		if err != nil {
 			return val, err
 		}
